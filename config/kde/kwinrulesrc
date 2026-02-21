@@ -1,0 +1,65 @@
+[$Version]
+update_info=kwinrules.upd:replace-placement-string-to-enum,kwinrules.upd:use-virtual-desktop-ids
+
+[1]
+Description=Application settings for jetbrains-clion
+clientmachine=localhost
+noborder=true
+noborderrule=2
+wmclass=clion
+wmclasscomplete=true
+wmclassmatch=2
+
+[2]
+Description=No border for WezTerm
+clientmachine=localhost
+noborder=true
+noborderrule=2
+position=1280,0
+positionrule=4
+size=1280,1440
+sizerule=4
+wmclass=org.wezfurlong.wezterm
+wmclassmatch=1
+
+[2de95ec7-a7b0-4d52-ab9c-c75969b717ca]
+Description=Application settings for jetbrains-clion
+clientmachine=localhost
+noborder=true
+noborderrule=2
+wmclass=clion
+wmclasscomplete=true
+wmclassmatch=2
+
+[9cc2626b-64e3-4eaa-af55-8697c7f38fa9]
+Description=Application settings for jetbrains-clion
+clientmachine=localhost
+noborder=true
+noborderrule=4
+wmclass=jetbrains-clion
+wmclassmatch=2
+
+[General]
+count=2
+rules=1,2
+
+[cbca182b-f5cf-4b54-ae5b-a9eed551cda8]
+Description=Application settings for jetbrains-clion
+clientmachine=localhost
+fullscreen=true
+fullscreenrule=4
+types=1
+wmclass=jetbrains-clion
+wmclassmatch=1
+
+[wezterm-noborder]
+Description=No border for WezTerm
+clientmachine=localhost
+noborder=true
+noborderrule=2
+position=1280,0
+positionrule=4
+size=1280,1440
+sizerule=4
+wmclass=org.wezfurlong.wezterm
+wmclassmatch=1

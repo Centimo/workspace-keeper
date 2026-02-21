@@ -1,0 +1,7 @@
+[Desktop Entry]
+Type=Application
+Name=Workspace Menu
+Exec=workspace menu
+Terminal=false
+Icon=preferences-desktop-virtual
+NoDisplay=true

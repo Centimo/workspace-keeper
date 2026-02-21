@@ -1,0 +1,543 @@
+#!/bin/bash
+# Workspace manager: creates KDE virtual desktops with CLion + WezTerm (tmux) + Floorp
+#
+# Usage:
+#   workspace create <path> [name]  — create or switch to workspace
+#   workspace save [name]           — save Floorp tabs for current workspace
+#   workspace close [name]          — save tabs and remove workspace
+#   workspace pin                   — pin focused Floorp window to all desktops
+#   workspace list                  — list workspaces
+#   workspace menu                  — rofi popup to switch/create/close workspaces
+
+set -euo pipefail
+
+_START_MS=$(date +%s%3N)
+WORKSPACE_DIR="$HOME/.config/workspaces"
+mkdir -p "$WORKSPACE_DIR"
+
+get_current_desktop_name() {
+  wmctrl -d | awk '$2 == "*" {
+    for(i=NF; i>0; i--) {
+      if ($i ~ /^[0-9]+x[0-9]+$/) { break }
+    }
+    result=""
+    for(j=i+1; j<=NF; j++) result = result (j>i+1 ? " " : "") $j
+    print result
+  }'
+}
+
+get_desktop_index() {
+  local name="$1"
+  wmctrl -d | while IFS= read -r line; do
+    local idx dname
+    idx=$(echo "$line" | awk '{print $1}')
+    dname=$(echo "$line" | awk '{
+      for(i=NF; i>0; i--) {
+        if ($i ~ /^[0-9]+x[0-9]+$/) break
+      }
+      result=""
+      for(j=i+1; j<=NF; j++) result = result (j>i+1 ? " " : "") $j
+      print result
+    }')
+    if [[ "$dname" == "$name" ]]; then
+      echo "$idx"
+      return 0
+    fi
+  done
+}
+
+get_desktop_id_by_name() {
+  local name="$1"
+  qdbus --literal org.kde.KWin /VirtualDesktopManager desktops 2>/dev/null \
+    | grep -oP '"[a-f0-9A-F-]+", "'"$name"'"' \
+    | grep -oP '"[a-f0-9A-F-]+"' | head -1 | tr -d '"'
+}
+
+create_desktop() {
+  local position="$1"
+  local name="$2"
+  local before
+  before=$(qdbus --literal org.kde.KWin /VirtualDesktopManager desktops 2>/dev/null \
+    | grep -oP '"[a-f0-9A-F-]+"' | sort)
+  qdbus org.kde.KWin /VirtualDesktopManager createDesktop "$position" "$name"
+  sleep 0.3
+  local after
+  after=$(qdbus --literal org.kde.KWin /VirtualDesktopManager desktops 2>/dev/null \
+    | grep -oP '"[a-f0-9A-F-]+"' | sort)
+  comm -13 <(echo "$before") <(echo "$after") | head -1
+}
+
+# Move window to desktop via KWin scripting API (updates taskbar correctly).
+# wmctrl -t sets _NET_WM_DESKTOP but KWin taskbar may not reflect the change.
+# Using KWin's own scripting API ensures internal state (including taskbar) stays in sync.
+# $1 — X11 window ID (hex, e.g. 0x05a958cd)
+# $2 — desktop index (0-based, as wmctrl uses)
+kwin_move_to_desktop() {
+  local hex_wid="$1"
+  local desktop_idx="$2"
+  local dec_wid=$(( hex_wid ))
+  local kwin_desktop=$(( desktop_idx + 1 ))
+
+  local script="/tmp/kwin-move-$$.js"
+  cat > "$script" << JSEOF
+var clients = workspace.clientList();
+for (var i = 0; i < clients.length; i++) {
+  if (clients[i].windowId === ${dec_wid}) {
+    clients[i].desktop = ${kwin_desktop};
+    break;
+  }
+}
+JSEOF
+
+  local script_name="workspace-move-$$"
+  qdbus org.kde.KWin /Scripting unloadScript "$script_name" 2>/dev/null || true
+  qdbus org.kde.KWin /Scripting loadScript "$script" "$script_name" >/dev/null
+  qdbus org.kde.KWin /Scripting start >/dev/null
+  sleep 0.2
+  qdbus org.kde.KWin /Scripting unloadScript "$script_name" 2>/dev/null || true
+  rm -f "$script"
+}
+
+find_bt_window_for_x_window() {
+  local x_wid="$1"
+  local x_title
+  x_title=$(xprop -id "$x_wid" _NET_WM_NAME 2>/dev/null \
+    | sed 's/_NET_WM_NAME(UTF8_STRING) = "\(.*\)"/\1/' \
+    | sed 's/ — Ablaze Floorp$//')
+
+  if [[ -z "$x_title" ]]; then
+    return 1
+  fi
+
+  local bt_output
+  bt_output=$(bt list 2>/dev/null) || return 1
+
+  local bt_wins
+  bt_wins=$(bt windows 2>/dev/null | awk -F'\t' '{print $1}') || return 1
+
+  while IFS= read -r bt_wid; do
+    [[ -z "$bt_wid" ]] && continue
+    if echo "$bt_output" | grep "^${bt_wid}\." | awk -F'\t' '{print $2}' \
+        | grep -qF "$x_title"; then
+      echo "$bt_wid"
+      return 0
+    fi
+  done <<< "$bt_wins"
+  return 1
+}
+
+find_clion_window_for_project() {
+  local project_dir="$1"
+  local project_name
+  project_name=$(basename "$project_dir")
+  wmctrl -l | grep -i "$project_name" | grep -iv "Floorp\|wezterm\|tmux" \
+    | awk '{print $1}' | head -1
+}
+
+find_floorp_on_desktop() {
+  local desktop_idx="$1"
+  wmctrl -l | awk -v d="$desktop_idx" '$2 == d && /Ablaze Floorp/ {print $1; exit}'
+}
+
+# Wait for a new window to appear (by diffing wmctrl -l).
+# $1 — sorted list of window IDs before launch
+# $2 — timeout in seconds
+# $3 — optional regex to exclude (matched against window title)
+wait_for_new_window() {
+  local before="$1"
+  local timeout="${2:-8}"
+  local filter="${3:-}"
+
+  local deadline=$((SECONDS + timeout))
+  while (( SECONDS < deadline )); do
+    local after
+    after=$(wmctrl -l | awk '{print $1}' | sort)
+    local new_wids
+    new_wids=$(comm -13 <(echo "$before") <(echo "$after"))
+
+    while IFS= read -r wid; do
+      [[ -z "$wid" ]] && continue
+      if [[ -n "$filter" ]]; then
+        local title
+        title=$(xprop -id "$wid" _NET_WM_NAME 2>/dev/null | sed 's/.*= "\(.*\)"/\1/' || true)
+        if echo "$title" | grep -qiE "$filter"; then
+          continue
+        fi
+      fi
+      echo "$wid"
+      return 0
+    done <<< "$new_wids"
+    sleep 0.3
+  done
+  return 1
+}
+
+cmd_create() {
+  local project_dir="${1:?Usage: workspace create <path> [name]}"
+  project_dir="$(realpath "$project_dir")"
+
+  if [[ ! -d "$project_dir" ]]; then
+    echo "Error: directory '$project_dir' does not exist" >&2
+    exit 1
+  fi
+
+  local ws_name="${2:-$(basename "$project_dir")}"
+  local ws_dir="$WORKSPACE_DIR/$ws_name"
+  mkdir -p "$ws_dir"
+  echo "$project_dir" > "$ws_dir/project_dir"
+
+  # Check if this workspace desktop already exists — just switch to it
+  local existing_idx
+  existing_idx=$(get_desktop_index "$ws_name") || true
+  if [[ -n "$existing_idx" ]]; then
+    echo "Workspace '$ws_name' already active, switching..."
+    wmctrl -s "$existing_idx"
+    return 0
+  fi
+
+  # Create new virtual desktop
+  local desktop_count
+  desktop_count=$(qdbus org.kde.KWin /VirtualDesktopManager count)
+  local desktop_id
+  desktop_id=$(create_desktop "$desktop_count" "$ws_name")
+
+  if [[ -z "$desktop_id" ]]; then
+    echo "Error: failed to create desktop '$ws_name'" >&2
+    exit 1
+  fi
+
+  local desktop_idx
+  desktop_idx=$(get_desktop_index "$ws_name")
+  if [[ -z "$desktop_idx" ]]; then
+    echo "Error: could not find desktop index for '$ws_name'" >&2
+    exit 1
+  fi
+
+  # Switch to new desktop FIRST — single-process apps (CLion, Floorp) create
+  # windows on the current desktop, so we must be on the target desktop already.
+  wmctrl -s "$desktop_idx"
+  sleep 0.3
+
+  # --- WezTerm + tmux ---
+  local before_wez
+  before_wez=$(wmctrl -l | awk '{print $1}' | sort)
+
+  if tmux has-session -t "=$ws_name" 2>/dev/null; then
+    wezterm start --always-new-process -- tmux attach -t "=$ws_name" &
+  else
+    wezterm start --always-new-process -- tmux new-session -s "$ws_name" -c "$project_dir" &
+  fi
+
+  local wez_wid
+  wez_wid=$(wait_for_new_window "$before_wez" 8) || true
+  if [[ -n "$wez_wid" ]]; then
+    kwin_move_to_desktop "$wez_wid" "$desktop_idx"
+  else
+    echo "Warning: WezTerm window not detected" >&2
+  fi
+
+  # --- CLion ---
+  local clion_wid
+  clion_wid=$(find_clion_window_for_project "$project_dir") || true
+  if [[ -n "$clion_wid" ]]; then
+    kwin_move_to_desktop "$clion_wid" "$desktop_idx"
+  else
+    local before_clion
+    before_clion=$(wmctrl -l | awk '{print $1}' | sort)
+
+    "$HOME/.local/share/JetBrains/Toolbox/apps/clion/bin/clion" "$project_dir" &
+
+    clion_wid=$(wait_for_new_window "$before_clion" 20 "Floorp|tmux") || true
+    if [[ -n "$clion_wid" ]]; then
+      kwin_move_to_desktop "$clion_wid" "$desktop_idx"
+    else
+      echo "Warning: CLion window not detected" >&2
+    fi
+  fi
+
+  # --- Floorp ---
+  local before_floorp
+  before_floorp=$(wmctrl -l | awk '/Ablaze Floorp/ {print $1}' | sort)
+
+  local tabs_file="$ws_dir/tabs.txt"
+  if [[ -f "$tabs_file" ]] && [[ -s "$tabs_file" ]]; then
+    floorp --new-window "$(head -1 "$tabs_file")" &
+    sleep 1.5
+    tail -n +2 "$tabs_file" | while IFS= read -r url; do
+      [[ -z "$url" ]] && continue
+      floorp --new-tab "$url" &
+      sleep 0.15
+    done
+  else
+    floorp --new-window "about:blank" &
+  fi
+
+  local floorp_wid=""
+  local deadline=$((SECONDS + 8))
+  while (( SECONDS < deadline )); do
+    local after_floorp
+    after_floorp=$(wmctrl -l | awk '/Ablaze Floorp/ {print $1}' | sort)
+    floorp_wid=$(comm -13 <(echo "$before_floorp") <(echo "$after_floorp") | head -1)
+    [[ -n "$floorp_wid" ]] && break
+    sleep 0.3
+  done
+  if [[ -n "$floorp_wid" ]]; then
+    kwin_move_to_desktop "$floorp_wid" "$desktop_idx"
+    # Tile to left half via KWin Quick Tile (like Meta+Left)
+    wmctrl -i -a "$floorp_wid"
+    sleep 0.3
+    qdbus org.kde.kglobalaccel /component/kwin \
+      org.kde.kglobalaccel.Component.invokeShortcut "Window Quick Tile Left"
+  else
+    echo "Warning: Floorp window not detected" >&2
+  fi
+
+  echo "Workspace '$ws_name' created"
+  echo "  Project: $project_dir"
+  echo "  Desktop: $desktop_idx"
+}
+
+cmd_save() {
+  local ws_name="${1:-}"
+
+  if [[ -z "$ws_name" ]]; then
+    ws_name=$(get_current_desktop_name)
+  fi
+
+  local ws_dir="$WORKSPACE_DIR/$ws_name"
+  if [[ ! -d "$ws_dir" ]]; then
+    echo "Error: workspace '$ws_name' not found in $WORKSPACE_DIR" >&2
+    exit 1
+  fi
+
+  local desktop_idx
+  desktop_idx=$(get_desktop_index "$ws_name")
+  if [[ -z "$desktop_idx" ]]; then
+    echo "Error: desktop '$ws_name' not found" >&2
+    exit 1
+  fi
+
+  local floorp_wid
+  floorp_wid=$(find_floorp_on_desktop "$desktop_idx")
+  if [[ -z "$floorp_wid" ]]; then
+    echo "No Floorp window found on desktop '$ws_name'"
+    return 0
+  fi
+
+  local bt_wid
+  if ! bt_wid=$(find_bt_window_for_x_window "$floorp_wid"); then
+    echo "Error: could not match Floorp window to BroTab window" >&2
+    return 1
+  fi
+
+  if [[ -z "$bt_wid" ]]; then
+    echo "Error: empty BroTab window ID" >&2
+    return 1
+  fi
+
+  local tabs_file="$ws_dir/tabs.txt"
+  bt list 2>/dev/null | grep "^${bt_wid}\." | awk -F'\t' '{print $3}' \
+    | grep -v '^about:' > "$tabs_file"
+
+  local count
+  count=$(wc -l < "$tabs_file")
+  echo "Saved $count tabs for workspace '$ws_name'"
+}
+
+cmd_close() {
+  local ws_name="${1:-}"
+
+  if [[ -z "$ws_name" ]]; then
+    ws_name=$(get_current_desktop_name)
+  fi
+
+  # Save tabs first
+  cmd_save "$ws_name" || echo "Warning: failed to save tabs for '$ws_name'" >&2
+
+  local desktop_idx
+  desktop_idx=$(get_desktop_index "$ws_name") || true
+
+  if [[ -n "$desktop_idx" ]]; then
+    local floorp_wid
+    floorp_wid=$(find_floorp_on_desktop "$desktop_idx")
+    if [[ -n "$floorp_wid" ]]; then
+      wmctrl -i -c "$floorp_wid"
+    fi
+
+    local clion_wid
+    clion_wid=$(wmctrl -l | awk -v d="$desktop_idx" \
+      '$2 == d && !/Ablaze Floorp/ && !/tmux/ && !/Plasma/ {print $1; exit}')
+    if [[ -n "$clion_wid" ]]; then
+      wmctrl -i -c "$clion_wid"
+    fi
+  fi
+
+  # Kill tmux session — WezTerm closes automatically when shell exits
+  if tmux has-session -t "=$ws_name" 2>/dev/null; then
+    tmux kill-session -t "=$ws_name"
+  fi
+
+  local desktop_id
+  desktop_id=$(get_desktop_id_by_name "$ws_name")
+  if [[ -n "$desktop_id" ]]; then
+    qdbus org.kde.KWin /VirtualDesktopManager removeDesktop "$desktop_id"
+    echo "Workspace '$ws_name' closed"
+  else
+    echo "Error: desktop '$ws_name' not found" >&2
+    exit 1
+  fi
+}
+
+cmd_pin() {
+  local active_wid
+  active_wid=$(xdotool getactivewindow 2>/dev/null) || {
+    echo "Error: no active window" >&2
+    exit 1
+  }
+
+  local wm_name
+  wm_name=$(xprop -id "$active_wid" _NET_WM_NAME 2>/dev/null \
+    | sed 's/_NET_WM_NAME(UTF8_STRING) = "\(.*\)"/\1/')
+
+  if [[ "$wm_name" != *"Floorp"* ]] && [[ "$wm_name" != *"Ablaze Floorp"* ]]; then
+    echo "Warning: active window doesn't look like Floorp ('$wm_name')"
+    echo "Pinning anyway..."
+  fi
+
+  wmctrl -i -r "$active_wid" -b add,sticky
+  echo "Pinned window '$wm_name' to all desktops"
+}
+
+cmd_list() {
+  echo "Workspaces:"
+  for ws in "$WORKSPACE_DIR"/*/; do
+    [[ -d "$ws" ]] || continue
+    local name project="" tabs=0 active=""
+    name=$(basename "$ws")
+    [[ -f "$ws/project_dir" ]] && project=$(cat "$ws/project_dir")
+    [[ -f "$ws/tabs.txt" ]] && tabs=$(wc -l < "$ws/tabs.txt")
+    local idx
+    idx=$(get_desktop_index "$name") || true
+    [[ -n "$idx" ]] && active=" [active]"
+    echo "  $name  →  $project  ($tabs saved tabs)$active"
+  done
+}
+
+cmd_menu() {
+  local socket_path="/tmp/workspace-menu"
+
+  local response
+  response=$(echo "show $_START_MS" | socat -t999 STDIO UNIX-CONNECT:"$socket_path",shut-none 2>/dev/null)
+
+  if [[ $? -ne 0 ]]; then
+    echo "workspace-menu: daemon not running" >&2
+    return 1
+  fi
+
+  [[ -z "$response" ]] && return 0
+
+  local action selected
+  action="${response%% *}"
+  selected="${response#* }"
+
+  # No-op responses
+  case "$action" in
+    cancelled|busy|error) return 0 ;;
+  esac
+
+  [[ -z "$selected" ]] && return 0
+
+  # Collect active desktops for handle logic
+  declare -A active_desktops
+  while IFS= read -r line; do
+    local idx dname
+    idx=$(printf '%s' "$line" | awk '{print $1}')
+    dname=$(printf '%s' "$line" | awk '{
+      for(i=NF; i>0; i--) {
+        if ($i ~ /^[0-9]+x[0-9]+$/) break
+      }
+      result=""
+      for(j=i+1; j<=NF; j++) result = result (j>i+1 ? " " : "") $j
+      print result
+    }')
+    [[ -n "$dname" ]] && active_desktops["$dname"]="$idx"
+  done < <(wmctrl -d)
+
+  # selected is either a workspace name or a directory path.
+  # Resolve: find workspace name by matching project_dir path.
+  local ws_name=""
+  local ws_project_dir=""
+  if [[ "$selected" == /* ]]; then
+    # Path — find workspace that owns this path (or parent)
+    local resolved
+    resolved=$(realpath -s "$selected" 2>/dev/null || printf '%s' "$selected")
+    resolved="${resolved%/}"
+    for ws in "$WORKSPACE_DIR"/*/; do
+      [[ -d "$ws" ]] || continue
+      [[ -f "$ws/project_dir" ]] || continue
+      local pd
+      pd=$(<"$ws/project_dir")
+      pd="${pd%/}"
+      if [[ "$resolved" == "$pd" ]]; then
+        ws_name=$(basename "$ws")
+        ws_project_dir="$pd"
+        break
+      fi
+    done
+  else
+    ws_name="$selected"
+    local ws_dir="$WORKSPACE_DIR/$ws_name"
+    if [[ -f "$ws_dir/project_dir" ]]; then
+      ws_project_dir=$(<"$ws_dir/project_dir")
+    fi
+  fi
+
+  case "$action" in
+    select|custom_input)
+      if [[ -n "$ws_name" ]] && [[ -n "${active_desktops[$ws_name]+x}" ]]; then
+        # Active workspace — switch to it
+        wmctrl -s "${active_desktops[$ws_name]}"
+      elif [[ -n "$ws_name" ]] && [[ -d "$WORKSPACE_DIR/$ws_name" ]]; then
+        # Saved workspace — activate it
+        if [[ -n "$ws_project_dir" ]]; then
+          cmd_create "$ws_project_dir" "$ws_name"
+        else
+          echo "Error: no project_dir for workspace '$ws_name'" >&2
+          return 1
+        fi
+      elif [[ -d "${selected%/}" ]]; then
+        # Directory path — create new workspace
+        cmd_create "${selected%/}"
+      else
+        echo "Error: '$selected' is neither a known workspace nor an existing directory" >&2
+        return 1
+      fi
+      ;;
+    close)
+      if [[ -n "$ws_name" ]] && [[ -d "$WORKSPACE_DIR/$ws_name" ]]; then
+        cmd_close "$ws_name"
+      else
+        echo "Error: workspace for '$selected' not found" >&2
+        return 1
+      fi
+      ;;
+  esac
+}
+
+case "${1:-help}" in
+  create) shift; cmd_create "$@" ;;
+  save)   shift; cmd_save "$@" ;;
+  close)  shift; cmd_close "$@" ;;
+  pin)    cmd_pin ;;
+  list)   cmd_list ;;
+  menu)   cmd_menu ;;
+  help|*)
+    echo "Usage:"
+    echo "  workspace create <path> [name]  — create or switch to workspace"
+    echo "  workspace save [name]           — save Floorp tabs for current workspace"
+    echo "  workspace close [name]          — save tabs and remove workspace"
+    echo "  workspace pin                   — pin focused Floorp window to all desktops"
+    echo "  workspace list                  — list saved workspaces"
+    echo "  workspace menu                  — rofi popup to switch/create/close workspaces"
+    ;;
+esac

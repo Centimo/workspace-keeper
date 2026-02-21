@@ -1,0 +1,7 @@
+[Desktop Entry]
+Type=Application
+Name=Workspace Menu Daemon
+Exec=__HOME__/.local/bin/workspace-menu
+Terminal=false
+NoDisplay=true
+X-KDE-autostart-phase=2

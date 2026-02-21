@@ -1,0 +1,7 @@
+[Desktop Entry]
+Type=Application
+Name=WezTerm
+Exec=/usr/bin/wezterm
+Icon=org.wezfurlong.wezterm
+Terminal=false
+Categories=System;TerminalEmulator;
