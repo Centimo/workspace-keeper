@@ -8,6 +8,7 @@
 #   workspace pin                   — pin focused Floorp window to all desktops
 #   workspace list                  — list workspaces
 #   workspace menu                  — rofi popup to switch/create/close workspaces
+#   workspace handle-response "<r>"  — handle daemon menu response directly
 
 set -euo pipefail
 
@@ -423,18 +424,8 @@ cmd_list() {
   done
 }
 
-cmd_menu() {
-  local socket_path="/tmp/workspace-menu"
-
-  local response
-  response=$(echo "show $_START_MS" | socat -t999 STDIO UNIX-CONNECT:"$socket_path",shut-none 2>/dev/null)
-
-  if [[ $? -ne 0 ]]; then
-    echo "workspace-menu: daemon not running" >&2
-    return 1
-  fi
-
-  [[ -z "$response" ]] && return 0
+cmd_handle_response() {
+  local response="${1:?Usage: workspace handle-response \"<response>\"}"
 
   local action selected
   action="${response%% *}"
@@ -524,20 +515,38 @@ cmd_menu() {
   esac
 }
 
+cmd_menu() {
+  local socket_path="/tmp/workspace-menu"
+
+  local response
+  response=$(echo "show $_START_MS" | socat -t999 STDIO UNIX-CONNECT:"$socket_path",shut-none 2>/dev/null)
+
+  if [[ $? -ne 0 ]]; then
+    echo "workspace-menu: daemon not running" >&2
+    return 1
+  fi
+
+  [[ -z "$response" ]] && return 0
+
+  cmd_handle_response "$response"
+}
+
 case "${1:-help}" in
-  create) shift; cmd_create "$@" ;;
-  save)   shift; cmd_save "$@" ;;
-  close)  shift; cmd_close "$@" ;;
-  pin)    cmd_pin ;;
-  list)   cmd_list ;;
-  menu)   cmd_menu ;;
+  create)           shift; cmd_create "$@" ;;
+  save)             shift; cmd_save "$@" ;;
+  close)            shift; cmd_close "$@" ;;
+  pin)              cmd_pin ;;
+  list)             cmd_list ;;
+  menu)             cmd_menu ;;
+  handle-response)  shift; cmd_handle_response "$@" ;;
   help|*)
     echo "Usage:"
-    echo "  workspace create <path> [name]  — create or switch to workspace"
-    echo "  workspace save [name]           — save Floorp tabs for current workspace"
-    echo "  workspace close [name]          — save tabs and remove workspace"
-    echo "  workspace pin                   — pin focused Floorp window to all desktops"
-    echo "  workspace list                  — list saved workspaces"
-    echo "  workspace menu                  — rofi popup to switch/create/close workspaces"
+    echo "  workspace create <path> [name]           — create or switch to workspace"
+    echo "  workspace save [name]                    — save Floorp tabs for current workspace"
+    echo "  workspace close [name]                   — save tabs and remove workspace"
+    echo "  workspace pin                            — pin focused Floorp window to all desktops"
+    echo "  workspace list                           — list saved workspaces"
+    echo "  workspace menu                           — rofi popup to switch/create/close workspaces"
+    echo "  workspace handle-response \"<response>\"   — handle daemon menu response"
     ;;
 esac

@@ -107,17 +107,15 @@ fi
 "$KWRITECONFIG" --file "$SHORTCUTS_FILE" --group kwin \
   --key "Walk Through Windows (Reverse)" "Ctrl+Shift+Backtab,Alt+Shift+Backtab,Walk Through Windows (Reverse)"
 
-# Assign Alt+Tab to workspace menu (.desktop shortcut)
+# Clear old .desktop-based shortcut (now registered via KGlobalAccel in the daemon)
 "$KWRITECONFIG" --file "$SHORTCUTS_FILE" --group workspace-menu.desktop \
-  --key "_launch" "Alt+Tab,none,Workspace Menu"
-"$KWRITECONFIG" --file "$SHORTCUTS_FILE" --group workspace-menu.desktop \
-  --key "_k_friendly_name" "Workspace Menu"
+  --key "_launch" "none,none,Workspace Menu"
 
 # Reload kglobalaccel to apply changes
 "$KQUITAPP" kglobalaccel 2>/dev/null || true
 sleep 1
 "$KGLOBALACCEL" 2>/dev/null &
 disown
-echo "  KDE shortcuts configured (Alt+Tab -> workspace menu, Ctrl+Tab -> window switching)"
+echo "  KDE shortcuts configured (Ctrl+Tab -> window switching, Alt+Tab -> daemon via KGlobalAccel)"
 
 echo "Done."

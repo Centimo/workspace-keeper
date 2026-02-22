@@ -3,9 +3,13 @@
 
 #include <QLocalServer>
 #include <QLocalSocket>
-#include <QElapsedTimer>
+#include <QDateTime>
+#include <QDir>
+#include <QProcess>
 
 static const QString socket_name = "workspace-menu";
+static const QString workspace_bin =
+  QDir::homePath() + "/.local/bin/workspace";
 
 Daemon_server::Daemon_server(Menu_window& window, QObject* parent)
   : QObject(parent)
@@ -80,6 +84,34 @@ void Daemon_server::on_new_connection() {
 }
 
 void Daemon_server::on_session_finished(const QString& response) {
+  if (_shortcut_session) {
+    _shortcut_session = false;
+
+    qInfo("workspace-menu: shortcut session response: '%s'", qPrintable(response));
+
+    if (!response.isEmpty()
+      && !response.startsWith("cancelled")
+      && !response.startsWith("error"))
+    {
+      auto* process = new QProcess(this);
+      connect(process, &QProcess::finished, this,
+        [process](int exit_code, QProcess::ExitStatus status) {
+          if (exit_code != 0 || status != QProcess::NormalExit) {
+            qWarning("workspace handle-response: exit code %d, stderr: %s",
+              exit_code, process->readAllStandardError().constData());
+          }
+          process->deleteLater();
+        });
+      connect(process, &QProcess::errorOccurred, this, [process](QProcess::ProcessError err) {
+        qWarning("workspace handle-response: process error %d: %s",
+          static_cast<int>(err), qPrintable(process->errorString()));
+        process->deleteLater();
+      });
+      process->start(workspace_bin, {"handle-response", response});
+    }
+    return;
+  }
+
   if (!_active_client) {
     return;
   }
@@ -99,6 +131,15 @@ void Daemon_server::on_client_disconnected() {
   // on_session_finished from writing to the already-disconnected socket
   reset_client();
   _window.cancel_session();
+}
+
+void Daemon_server::trigger_from_shortcut() {
+  if (_active_client || _shortcut_session || _window.isVisible()) {
+    return;
+  }
+
+  _shortcut_session = true;
+  _window.activate(QDateTime::currentMSecsSinceEpoch());
 }
 
 void Daemon_server::reset_client() {

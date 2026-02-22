@@ -14,6 +14,9 @@ class Daemon_server : public QObject {
 
   bool start();
 
+ public slots:
+  void trigger_from_shortcut();
+
  private:
   void on_new_connection();
   void on_session_finished(const QString& response);
@@ -23,4 +26,5 @@ class Daemon_server : public QObject {
   Menu_window& _window;
   QLocalServer* _server;
   QLocalSocket* _active_client = nullptr;
+  bool _shortcut_session = false;
 };
