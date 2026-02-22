@@ -68,9 +68,9 @@ create_desktop() {
   comm -13 <(echo "$before") <(echo "$after") | head -1
 }
 
-# Move window to desktop via KWin scripting API (updates taskbar correctly).
-# wmctrl -t sets _NET_WM_DESKTOP but KWin taskbar may not reflect the change.
-# Using KWin's own scripting API ensures internal state (including taskbar) stays in sync.
+# Move window to desktop.
+# Uses both KWin scripting API (updates KWin internal state) and wmctrl
+# (updates _NET_WM_DESKTOP X11 property) to keep taskbar icons in sync.
 # $1 — X11 window ID (hex, e.g. 0x05a958cd)
 # $2 — desktop index (0-based, as wmctrl uses)
 kwin_move_to_desktop() {
@@ -97,6 +97,9 @@ JSEOF
   sleep 0.2
   qdbus org.kde.KWin /Scripting unloadScript "$script_name" 2>/dev/null || true
   rm -f "$script"
+
+  # Sync X11 _NET_WM_DESKTOP property (taskbar reads this)
+  wmctrl -i -r "$hex_wid" -t "$desktop_idx"
 }
 
 find_bt_window_for_x_window() {
@@ -129,10 +132,7 @@ find_bt_window_for_x_window() {
 
 find_clion_window_for_project() {
   local project_dir="$1"
-  local project_name
-  project_name=$(basename "$project_dir")
-  wmctrl -l | grep -i "$project_name" | grep -iv "Floorp\|wezterm\|tmux" \
-    | awk '{print $1}' | head -1
+  wmctrl -l | grep -F "[$project_dir]" | awk '{print $1}' | head -1
 }
 
 find_floorp_on_desktop() {
@@ -358,18 +358,25 @@ cmd_close() {
   local desktop_idx
   desktop_idx=$(get_desktop_index "$ws_name") || true
 
+  local ws_dir="$WORKSPACE_DIR/$ws_name"
+
+  # Close CLion window by matching project_dir in window title
+  if [[ -f "$ws_dir/project_dir" ]]; then
+    local project_dir
+    project_dir=$(<"$ws_dir/project_dir")
+    local clion_wid
+    clion_wid=$(find_clion_window_for_project "$project_dir")
+    if [[ -n "$clion_wid" ]]; then
+      wmctrl -i -c "$clion_wid"
+    fi
+  fi
+
+  # Close Floorp window on this desktop
   if [[ -n "$desktop_idx" ]]; then
     local floorp_wid
     floorp_wid=$(find_floorp_on_desktop "$desktop_idx")
     if [[ -n "$floorp_wid" ]]; then
       wmctrl -i -c "$floorp_wid"
-    fi
-
-    local clion_wid
-    clion_wid=$(wmctrl -l | awk -v d="$desktop_idx" \
-      '$2 == d && !/Ablaze Floorp/ && !/tmux/ && !/Plasma/ {print $1; exit}')
-    if [[ -n "$clion_wid" ]]; then
-      wmctrl -i -c "$clion_wid"
     fi
   fi
 
