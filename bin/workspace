@@ -140,6 +140,46 @@ JSEOF
   rm -f "$script"
 }
 
+# Force _NET_WM_DESKTOP re-sync for windows on desktops above the removed one.
+# KWin bug: removeDesktop shifts internal numbering but doesn't update X11 property.
+# Bounce (desktop=other, desktop=original) forces KWin to re-write _NET_WM_DESKTOP.
+# $1 — removed desktop index (0-based)
+kwin_resync_desktops_above() {
+  local removed_idx="$1"
+  local removed_kwin=$((removed_idx + 1))  # KWin 1-based
+
+  log "resync: bouncing windows on desktops above removed index $removed_idx"
+
+  local script="/tmp/kwin-resync-$$.js"
+  cat > "$script" << JSEOF
+(function() {
+  var clients = workspace.clientList();
+  for (var i = 0; i < clients.length; i++) {
+    var c = clients[i];
+    if (c.desktop < ${removed_kwin} || c.desktop < 1) continue;
+
+    // Bounce to a different desktop and back to force _NET_WM_DESKTOP update.
+    // Use desktop +1 or -1 to avoid flicker on current desktop.
+    var d = c.desktop;
+    var bounce = (d > 1) ? d - 1 : d + 1;
+    c.desktop = bounce;
+    c.desktop = d;
+    print("resynced wid=" + c.windowId + " desktop=" + d);
+  }
+})();
+JSEOF
+
+  local script_name="workspace-resync-$$"
+  qdbus org.kde.KWin /Scripting unloadScript "$script_name" 2>/dev/null || true
+  qdbus org.kde.KWin /Scripting loadScript "$script" "$script_name" >/dev/null
+  qdbus org.kde.KWin /Scripting start >/dev/null
+  sleep 0.3
+  qdbus org.kde.KWin /Scripting unloadScript "$script_name" 2>/dev/null || true
+  rm -f "$script"
+
+  log "resync: done"
+}
+
 find_bt_window_for_x_window() {
   local x_wid="$1"
   local x_title
@@ -455,6 +495,15 @@ cmd_close() {
   desktop_id=$(get_desktop_id_by_name "$ws_name")
   if [[ -n "$desktop_id" ]]; then
     qdbus org.kde.KWin /VirtualDesktopManager removeDesktop "$desktop_id"
+    sleep 0.3
+
+    # KWin bug: removeDesktop shifts KWin internal desktop numbers for windows
+    # above the removed desktop, but does NOT update _NET_WM_DESKTOP X11 property.
+    # Bounce all windows on affected desktops to force re-sync.
+    if [[ -n "$desktop_idx" ]]; then
+      kwin_resync_desktops_above "$desktop_idx"
+    fi
+
     echo "Workspace '$ws_name' closed"
   else
     echo "Error: desktop '$ws_name' not found" >&2
