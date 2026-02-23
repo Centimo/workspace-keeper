@@ -3,4 +3,5 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential cmake pkg-config \
     qt6-base-dev \
     libgl-dev \
+    libsystemd-dev \
     && rm -rf /var/lib/apt/lists/*

@@ -1,4 +1,5 @@
 #include "menu_window.h"
+#include "journal_log.h"
 
 #include <QApplication>
 #include <QDateTime>
@@ -212,7 +213,7 @@ bool Menu_window::nativeEventFilter(
     auto* map_event = reinterpret_cast< xcb_map_notify_event_t*>(xcb_event);
     if (windowHandle() && map_event->window == static_cast< xcb_window_t>(windowHandle()->winId())) {
       auto elapsed_ms = QDateTime::currentMSecsSinceEpoch() - _client_timestamp_ms;
-      qInfo("workspace-menu: startup latency %lld ms", elapsed_ms);
+      qCInfo(logWindow, "startup latency %lld ms", elapsed_ms);
       _client_timestamp_ms = 0;
     }
   }

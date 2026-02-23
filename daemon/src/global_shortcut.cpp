@@ -1,4 +1,5 @@
 #include "global_shortcut.h"
+#include "journal_log.h"
 
 #include <QCoreApplication>
 #include <QDBusConnection>
@@ -31,7 +32,7 @@ Global_shortcut::Global_shortcut(
   };
 
   if (shortcut.count() == 0) {
-    qWarning("Global_shortcut: empty key sequence for action '%s'", qPrintable(action_name));
+    qCWarning(logShortcut, "empty key sequence for action '%s'", qPrintable(action_name));
     return;
   }
 
@@ -43,7 +44,7 @@ Global_shortcut::Global_shortcut(
   // doRegister must be called before setShortcut to create the action in kglobalaccel
   auto reg_reply = iface.call("doRegister", action_id);
   if (reg_reply.type() == QDBusMessage::ErrorMessage) {
-    qWarning("Global_shortcut: doRegister failed for '%s': %s",
+    qCWarning(logShortcut, "doRegister failed for '%s': %s",
       qPrintable(action_name), qPrintable(reg_reply.errorMessage()));
     return;
   }
@@ -51,14 +52,14 @@ Global_shortcut::Global_shortcut(
   // SetPresent=2 marks the shortcut as active
   auto set_reply = iface.call("setShortcut", action_id, QVariant::fromValue(keys), 2u);
   if (set_reply.type() == QDBusMessage::ErrorMessage) {
-    qWarning("Global_shortcut: setShortcut failed for '%s': %s",
+    qCWarning(logShortcut, "setShortcut failed for '%s': %s",
       qPrintable(action_name), qPrintable(set_reply.errorMessage()));
     return;
   }
 
   QDBusReply<QDBusObjectPath> component_reply = iface.call("getComponent", _component_name);
   if (!component_reply.isValid()) {
-    qWarning("Global_shortcut: failed to get component '%s': %s",
+    qCWarning(logShortcut, "failed to get component '%s': %s",
       qPrintable(_component_name), qPrintable(component_reply.error().message()));
     return;
   }

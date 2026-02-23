@@ -8,6 +8,7 @@ set(CMAKE_AUTOMOC ON)
 find_package(Qt6 REQUIRED COMPONENTS Core Gui Widgets Network DBus)
 find_package(PkgConfig REQUIRED)
 pkg_check_modules(XCB REQUIRED xcb)
+pkg_check_modules(SYSTEMD REQUIRED libsystemd)
 
 add_executable(workspace-menu
   src/main.cpp
@@ -16,9 +17,12 @@ add_executable(workspace-menu
   src/menu_window.cpp
   src/daemon_server.cpp
   src/global_shortcut.cpp
+  src/journal_log.cpp
 )
 
-target_include_directories(workspace-menu PRIVATE ${XCB_INCLUDE_DIRS})
+target_include_directories(workspace-menu PRIVATE ${XCB_INCLUDE_DIRS} ${SYSTEMD_INCLUDE_DIRS})
+
+target_compile_definitions(workspace-menu PRIVATE QT_MESSAGELOGCONTEXT)
 
 target_link_libraries(workspace-menu PRIVATE
   Qt6::Core
@@ -27,4 +31,5 @@ target_link_libraries(workspace-menu PRIVATE
   Qt6::Network
   Qt6::DBus
   ${XCB_LIBRARIES}
+  ${SYSTEMD_LIBRARIES}
 )

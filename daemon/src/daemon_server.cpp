@@ -1,4 +1,5 @@
 #include "daemon_server.h"
+#include "journal_log.h"
 #include "menu_window.h"
 
 #include <QLocalServer>
@@ -23,11 +24,11 @@ Daemon_server::Daemon_server(Menu_window& window, QObject* parent)
 bool Daemon_server::start() {
   QLocalServer::removeServer(socket_name);
   if (!_server->listen(socket_name)) {
-    qCritical("workspace-menu: failed to listen on socket '%s': %s",
+    qCCritical(logServer, "failed to listen on socket '%s': %s",
       qPrintable(socket_name), qPrintable(_server->errorString()));
     return false;
   }
-  qInfo("workspace-menu: listening on %s", qPrintable(_server->fullServerName()));
+  qCInfo(logServer, "listening on %s", qPrintable(_server->fullServerName()));
   return true;
 }
 
@@ -87,7 +88,7 @@ void Daemon_server::on_session_finished(const QString& response) {
   if (_shortcut_session) {
     _shortcut_session = false;
 
-    qInfo("workspace-menu: shortcut session response: '%s'", qPrintable(response));
+    qCInfo(logServer, "shortcut session response: '%s'", qPrintable(response));
 
     if (!response.isEmpty()
       && !response.startsWith("cancelled")
@@ -97,13 +98,13 @@ void Daemon_server::on_session_finished(const QString& response) {
       connect(process, &QProcess::finished, this,
         [process](int exit_code, QProcess::ExitStatus status) {
           if (exit_code != 0 || status != QProcess::NormalExit) {
-            qWarning("workspace handle-response: exit code %d, stderr: %s",
+            qCWarning(logServer, "handle-response: exit code %d, stderr: %s",
               exit_code, process->readAllStandardError().constData());
           }
           process->deleteLater();
         });
       connect(process, &QProcess::errorOccurred, this, [process](QProcess::ProcessError err) {
-        qWarning("workspace handle-response: process error %d: %s",
+        qCWarning(logServer, "handle-response: process error %d: %s",
           static_cast<int>(err), qPrintable(process->errorString()));
         process->deleteLater();
       });
