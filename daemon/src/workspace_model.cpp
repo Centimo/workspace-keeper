@@ -177,25 +177,21 @@ const Entry* Workspace_model::selected_entry() const {
 }
 
 int Workspace_model::find_next_selectable(int from, int direction) const {
-  if (_entries.isEmpty()) {
+  const int count = _entries.size();
+  if (count == 0) {
     return -1;
   }
 
-  int pos = from + direction;
-  while (pos >= 0 && pos < _entries.size()) {
+  int pos = from < 0
+    ? (direction > 0 ? 0 : count - 1)
+    : (from + direction + count) % count;
+  for (int i = 0; i < count; ++i) {
     if (_entries[pos].type != Entry_type::SECTION_HEADER) {
       return pos;
     }
-    pos += direction;
+    pos = (pos + direction + count) % count;
   }
 
-  // No selectable entry found in that direction — keep current.
-  // Return from only if it's a valid selectable index, otherwise -1.
-  if (from >= 0 && from < _entries.size()
-    && _entries[from].type != Entry_type::SECTION_HEADER
-  ) {
-    return from;
-  }
   return -1;
 }
 
