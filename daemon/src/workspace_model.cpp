@@ -41,7 +41,8 @@ void Workspace_model::rebuild(
   const QString& filter,
   const QVector< QPair< QString, QString>>& active_desktops,
   const QVector< QPair< QString, QString>>& saved_workspaces,
-  const QString& path_input
+  const QString& path_input,
+  const QString& current_desktop
 ) {
   beginResetModel();
   _entries.clear();
@@ -132,8 +133,21 @@ void Workspace_model::rebuild(
     }
   }
 
-  // Select first selectable entry
-  _selected_index = find_next_selectable(-1, 1);
+  // Select current desktop entry, or first selectable as fallback
+  _selected_index = -1;
+  if (!current_desktop.isEmpty()) {
+    for (int i = 0; i < _entries.size(); ++i) {
+      if (_entries[i].type == Entry_type::WORKSPACE
+        && _entries[i].display_text.startsWith(current_desktop))
+      {
+        _selected_index = i;
+        break;
+      }
+    }
+  }
+  if (_selected_index < 0) {
+    _selected_index = find_next_selectable(-1, 1);
+  }
 
   endResetModel();
   emit selected_index_changed();

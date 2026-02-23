@@ -39,7 +39,8 @@ class Workspace_model : public QAbstractListModel {
     const QString& filter,
     const QVector< QPair< QString, QString>>& active_desktops,
     const QVector< QPair< QString, QString>>& saved_workspaces,
-    const QString& path_input
+    const QString& path_input,
+    const QString& current_desktop = {}
   );
 
   Q_INVOKABLE void navigate(int direction);

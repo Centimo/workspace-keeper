@@ -40,6 +40,7 @@ class Workspace_menu : public QObject {
 
   QVector< QPair< QString, QString>> _active_desktops;
   QVector< QPair< QString, QString>> _saved_workspaces;
+  QString _current_desktop_name;
 
   Workspace_model _model;
 };

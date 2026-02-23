@@ -77,6 +77,7 @@ QString Workspace_menu::tab_complete() {
 void Workspace_menu::load_data() {
   _active_desktops.clear();
   _saved_workspaces.clear();
+  _current_desktop_name.clear();
 
   // Read active desktops from wmctrl -d
   QProcess wmctrl;
@@ -91,6 +92,7 @@ void Workspace_menu::load_data() {
     struct Desktop_info {
       int index;
       QString name;
+      bool is_current;
     };
     QVector< Desktop_info> desktops;
 
@@ -99,6 +101,8 @@ void Workspace_menu::load_data() {
 
     for (const auto& line : lines) {
       auto parts = line.split(whitespace_re, Qt::SkipEmptyParts);
+      // Field 1 is "*" for current desktop, "-" otherwise
+      bool is_current = parts.size() > 1 && parts[1] == "*";
       // Find the geometry field (NxN pattern), name is everything after it
       int geo_idx = -1;
       for (int i = 0; i < parts.size(); ++i) {
@@ -113,7 +117,7 @@ void Workspace_menu::load_data() {
         }
         QString name = name_parts.join(' ');
         int index = parts[0].toInt();
-        desktops.append({index, name});
+        desktops.append({index, name, is_current});
       }
     }
 
@@ -124,6 +128,9 @@ void Workspace_menu::load_data() {
 
     for (const auto& d : desktops) {
       active_names.insert(d.name);
+      if (d.is_current) {
+        _current_desktop_name = d.name;
+      }
 
       // Look up project_dir from workspace config
       QString project_dir;
@@ -159,6 +166,6 @@ void Workspace_menu::load_data() {
 }
 
 void Workspace_menu::rebuild_model() {
-  _model.rebuild(_filter_text, _active_desktops, _saved_workspaces, _filter_text);
+  _model.rebuild(_filter_text, _active_desktops, _saved_workspaces, _filter_text, _current_desktop_name);
 }
 
