@@ -16,6 +16,14 @@ _START_MS=$(date +%s%3N)
 WORKSPACE_DIR="$HOME/.config/workspaces"
 mkdir -p "$WORKSPACE_DIR"
 
+log() {
+  local msg="$1"
+  local ts
+  ts=$(date '+%H:%M:%S.%3N')
+  echo "[$ts] $msg" >&2
+  logger -t workspace --id=$$ -- "$msg"
+}
+
 get_current_desktop_name() {
   wmctrl -d | awk '$2 == "*" {
     for(i=NF; i>0; i--) {
@@ -68,9 +76,10 @@ create_desktop() {
   comm -13 <(echo "$before") <(echo "$after") | head -1
 }
 
-# Move window to desktop.
-# Uses both KWin scripting API (updates KWin internal state) and wmctrl
-# (updates _NET_WM_DESKTOP X11 property) to keep taskbar icons in sync.
+# Move window to desktop via KWin scripting API.
+# KWin updates _NET_WM_DESKTOP itself after client.desktop assignment —
+# no need for separate wmctrl -t (which can race with KWin).
+# Uses clientAdded callback to handle windows not yet in clientList().
 # $1 — X11 window ID (hex, e.g. 0x05a958cd)
 # $2 — desktop index (0-based, as wmctrl uses)
 kwin_move_to_desktop() {
@@ -79,27 +88,56 @@ kwin_move_to_desktop() {
   local dec_wid=$(( hex_wid ))
   local kwin_desktop=$(( desktop_idx + 1 ))
 
+  log "move wid=$hex_wid (dec=$dec_wid) to desktop=$desktop_idx (kwin=$kwin_desktop)"
+
   local script="/tmp/kwin-move-$$.js"
   cat > "$script" << JSEOF
-var clients = workspace.clientList();
-for (var i = 0; i < clients.length; i++) {
-  if (clients[i].windowId === ${dec_wid}) {
-    clients[i].desktop = ${kwin_desktop};
-    break;
+(function() {
+  function moveWindow(client) {
+    if (client.windowId === ${dec_wid}) {
+      client.desktop = ${kwin_desktop};
+      return true;
+    }
+    return false;
   }
-}
+
+  var clients = workspace.clientList();
+  for (var i = 0; i < clients.length; i++) {
+    if (moveWindow(clients[i])) return;
+  }
+
+  // Window not found yet — wait for it via signal
+  var handler = function(client) {
+    if (moveWindow(client)) {
+      workspace.clientAdded.disconnect(handler);
+    }
+  };
+  workspace.clientAdded.connect(handler);
+})();
 JSEOF
 
   local script_name="workspace-move-$$"
   qdbus org.kde.KWin /Scripting unloadScript "$script_name" 2>/dev/null || true
   qdbus org.kde.KWin /Scripting loadScript "$script" "$script_name" >/dev/null
   qdbus org.kde.KWin /Scripting start >/dev/null
-  sleep 0.2
+
+  sleep 0.5
+
+  # Verify move succeeded by checking _NET_WM_DESKTOP
+  local actual_desktop
+  actual_desktop=$(xprop -id "$hex_wid" _NET_WM_DESKTOP 2>/dev/null \
+    | awk '{print $NF}') || true
+  if [[ "$actual_desktop" != "$desktop_idx" ]]; then
+    log "move verify: expected desktop=$desktop_idx, got=$actual_desktop — waiting longer"
+    sleep 1
+    actual_desktop=$(xprop -id "$hex_wid" _NET_WM_DESKTOP 2>/dev/null \
+      | awk '{print $NF}') || true
+  fi
+
+  log "move result: wid=$hex_wid _NET_WM_DESKTOP=$actual_desktop"
+
   qdbus org.kde.KWin /Scripting unloadScript "$script_name" 2>/dev/null || true
   rm -f "$script"
-
-  # Sync X11 _NET_WM_DESKTOP property (taskbar reads this)
-  wmctrl -i -r "$hex_wid" -t "$desktop_idx"
 }
 
 find_bt_window_for_x_window() {
@@ -149,6 +187,7 @@ wait_for_new_window() {
   local timeout="${2:-8}"
   local filter="${3:-}"
 
+  log "waiting for new window (timeout=${timeout}s, filter='$filter')"
   local deadline=$((SECONDS + timeout))
   while (( SECONDS < deadline )); do
     local after
@@ -165,11 +204,13 @@ wait_for_new_window() {
           continue
         fi
       fi
+      log "found new window $wid"
       echo "$wid"
       return 0
     done <<< "$new_wids"
     sleep 0.3
   done
+  log "no new window found within ${timeout}s"
   return 1
 }
 
@@ -186,6 +227,8 @@ cmd_create() {
   local ws_dir="$WORKSPACE_DIR/$ws_name"
   mkdir -p "$ws_dir"
   echo "$project_dir" > "$ws_dir/project_dir"
+
+  log "create workspace '$ws_name' for $project_dir"
 
   # Check if this workspace desktop already exists — just switch to it
   local existing_idx
@@ -216,8 +259,23 @@ cmd_create() {
 
   # Switch to new desktop FIRST — single-process apps (CLion, Floorp) create
   # windows on the current desktop, so we must be on the target desktop already.
+  log "switching to desktop $desktop_idx"
   wmctrl -s "$desktop_idx"
-  sleep 0.3
+  local switch_deadline=$((SECONDS + 3))
+  while (( SECONDS < switch_deadline )); do
+    local current
+    current=$(wmctrl -d | awk '$2=="*" {print $1}')
+    [[ "$current" == "$desktop_idx" ]] && break
+    sleep 0.1
+  done
+  local current_desktop
+  current_desktop=$(wmctrl -d | awk '$2=="*" {print $1}')
+  if [[ "$current_desktop" != "$desktop_idx" ]]; then
+    log "WARNING: desktop switch failed, expected=$desktop_idx current=$current_desktop"
+    echo "Warning: desktop switch to $desktop_idx did not confirm (current=$current_desktop)" >&2
+  else
+    log "desktop switch confirmed"
+  fi
 
   # --- WezTerm + tmux ---
   local before_wez
@@ -232,8 +290,10 @@ cmd_create() {
   local wez_wid
   wez_wid=$(wait_for_new_window "$before_wez" 8) || true
   if [[ -n "$wez_wid" ]]; then
+    log "detected WezTerm window $wez_wid"
     kwin_move_to_desktop "$wez_wid" "$desktop_idx"
   else
+    log "WezTerm window not detected"
     echo "Warning: WezTerm window not detected" >&2
   fi
 
@@ -241,6 +301,7 @@ cmd_create() {
   local clion_wid
   clion_wid=$(find_clion_window_for_project "$project_dir") || true
   if [[ -n "$clion_wid" ]]; then
+    log "detected existing CLion window $clion_wid for $project_dir"
     kwin_move_to_desktop "$clion_wid" "$desktop_idx"
   else
     local before_clion
@@ -250,8 +311,10 @@ cmd_create() {
 
     clion_wid=$(wait_for_new_window "$before_clion" 20 "Floorp|tmux") || true
     if [[ -n "$clion_wid" ]]; then
+      log "detected new CLion window $clion_wid"
       kwin_move_to_desktop "$clion_wid" "$desktop_idx"
     else
+      log "CLion window not detected"
       echo "Warning: CLion window not detected" >&2
     fi
   fi
@@ -274,8 +337,8 @@ cmd_create() {
   fi
 
   local floorp_wid=""
-  local deadline=$((SECONDS + 8))
-  while (( SECONDS < deadline )); do
+  local floorp_deadline=$((SECONDS + 8))
+  while (( SECONDS < floorp_deadline )); do
     local after_floorp
     after_floorp=$(wmctrl -l | awk '/Ablaze Floorp/ {print $1}' | sort)
     floorp_wid=$(comm -13 <(echo "$before_floorp") <(echo "$after_floorp") | head -1)
@@ -283,6 +346,7 @@ cmd_create() {
     sleep 0.3
   done
   if [[ -n "$floorp_wid" ]]; then
+    log "detected Floorp window $floorp_wid"
     kwin_move_to_desktop "$floorp_wid" "$desktop_idx"
     # Tile to left half via KWin Quick Tile (like Meta+Left)
     wmctrl -i -a "$floorp_wid"
@@ -290,9 +354,11 @@ cmd_create() {
     qdbus org.kde.kglobalaccel /component/kwin \
       org.kde.kglobalaccel.Component.invokeShortcut "Window Quick Tile Left"
   else
+    log "Floorp window not detected"
     echo "Warning: Floorp window not detected" >&2
   fi
 
+  log "workspace '$ws_name' created on desktop $desktop_idx"
   echo "Workspace '$ws_name' created"
   echo "  Project: $project_dir"
   echo "  Desktop: $desktop_idx"
