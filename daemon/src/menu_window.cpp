@@ -11,6 +11,9 @@
 #include <QVBoxLayout>
 #include <QWindow>
 
+#include <QDBusInterface>
+#include <QDBusReply>
+
 #include <xcb/xcb.h>
 
 static const QString style_sheet = R"(
@@ -131,6 +134,14 @@ Menu_window::Menu_window(QWidget* parent)
 void Menu_window::activate(qint64 client_timestamp_ms) {
   _shown = false;
   _client_timestamp_ms = client_timestamp_ms;
+  _saved_keyboard_layout = -1;
+
+  QDBusInterface keyboard("org.kde.keyboard", "/Layouts", "org.kde.KeyboardLayouts");
+  QDBusReply< uint> current_layout = keyboard.call("getLayout");
+  if (current_layout.isValid() && current_layout.value() != 0) {
+    _saved_keyboard_layout = current_layout.value();
+    keyboard.call("setLayout", 0u);
+  }
 
   _menu.begin_session();
   rebuild_list();
@@ -153,6 +164,13 @@ void Menu_window::activate(qint64 client_timestamp_ms) {
 void Menu_window::finish_session(const QString& response) {
   _shown = false;
   hide();
+
+  if (_saved_keyboard_layout >= 0) {
+    QDBusInterface keyboard("org.kde.keyboard", "/Layouts", "org.kde.KeyboardLayouts");
+    keyboard.call("setLayout", static_cast< uint>(_saved_keyboard_layout));
+    _saved_keyboard_layout = -1;
+  }
+
   emit session_finished(response);
 }
 

@@ -43,6 +43,7 @@ class Menu_window
   QListWidget* _list_widget;
   bool _shown = false;
   qint64 _client_timestamp_ms = 0;
+  int _saved_keyboard_layout = -1;
 
   static constexpr int _padding = 12;
   static constexpr int _max_visible_items = 15;
