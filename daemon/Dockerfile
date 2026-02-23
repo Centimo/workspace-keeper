@@ -4,4 +4,5 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     qt6-base-dev \
     libgl-dev \
     libsystemd-dev \
+    libxcb1-dev \
     && rm -rf /var/lib/apt/lists/*

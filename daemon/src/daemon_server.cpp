@@ -9,8 +9,11 @@
 #include <QProcess>
 
 static const QString socket_name = "workspace-menu";
-static const QString workspace_bin =
-  QDir::homePath() + "/.local/bin/workspace";
+
+static const QString& workspace_bin() {
+  static const QString path = QDir::homePath() + "/.local/bin/workspace";
+  return path;
+}
 
 Daemon_server::Daemon_server(Menu_window& window, QObject* parent)
   : QObject(parent)
@@ -73,7 +76,7 @@ void Daemon_server::on_new_connection() {
       }
 
       // Replace early cleanup handler with session-aware one
-      disconnect(client, &QLocalSocket::disconnected, nullptr, nullptr);
+      disconnect(client, &QLocalSocket::disconnected, this, nullptr);
 
       _active_client = client;
       connect(_active_client, &QLocalSocket::disconnected,
@@ -106,9 +109,13 @@ void Daemon_server::on_session_finished(const QString& response) {
       connect(process, &QProcess::errorOccurred, this, [process](QProcess::ProcessError err) {
         qCWarning(logServer, "handle-response: process error %d: %s",
           static_cast<int>(err), qPrintable(process->errorString()));
-        process->deleteLater();
+        // Only delete here for FailedToStart — finished() won't be emitted in that case.
+        // For all other errors, finished() follows and handles cleanup.
+        if (err == QProcess::FailedToStart) {
+          process->deleteLater();
+        }
       });
-      process->start(workspace_bin, {"handle-response", response});
+      process->start(workspace_bin(), {"handle-response", response});
     }
     return;
   }

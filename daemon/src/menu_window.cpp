@@ -92,7 +92,7 @@ Menu_window::Menu_window(QWidget* parent)
   // Input field with horizontal padding
   _filter_input = new QLineEdit(background);
   _filter_input->setPlaceholderText("type to filter...");
-  _filter_input->setFixedHeight(42);
+  _filter_input->setFixedHeight(_input_height);
   _filter_input->installEventFilter(this);
 
   auto* input_wrapper = new QWidget(background);
@@ -104,7 +104,7 @@ Menu_window::Menu_window(QWidget* parent)
 
   // Message bar
   _message_label = new QLabel("Enter: switch/create  Tab: complete path  Alt+Del: close", background);
-  _message_label->setFixedHeight(26);
+  _message_label->setFixedHeight(_message_bar_height);
   _message_label->setAlignment(Qt::AlignCenter);
   _message_label->setStyleSheet("color: #7f8c8d; font-family: Hack; font-size: 13px;");
   main_layout->addWidget(_message_label);
@@ -277,7 +277,7 @@ void Menu_window::rebuild_list() {
   }
   _list_widget->setFixedHeight(list_height);
 
-  int total_height = _padding * 2 + 42 + 26 + list_height + 2;
+  int total_height = _padding * 2 + _input_height + _message_bar_height + list_height + _border_width * 2;
   setFixedHeight(total_height);
 }
 

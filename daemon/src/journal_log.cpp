@@ -4,6 +4,7 @@
 #include <systemd/sd-journal.h>
 
 #include <cstdio>
+#include <unistd.h>
 
 Q_LOGGING_CATEGORY(logServer, "workspace-menu.server")
 Q_LOGGING_CATEGORY(logShortcut, "workspace-menu.shortcut")
@@ -19,6 +20,8 @@ static int qt_to_journal_priority(QtMsgType type) {
   }
   return LOG_INFO;
 }
+
+static bool stderr_is_tty = false;
 
 static void journal_message_handler(
   QtMsgType type,
@@ -39,9 +42,12 @@ static void journal_message_handler(
     nullptr
   );
 
-  fprintf(stderr, "[%s] %s\n", category, utf8.constData());
+  if (stderr_is_tty) {
+    fprintf(stderr, "[%s] %s\n", category, utf8.constData());
+  }
 }
 
 void install_journal_handler() {
+  stderr_is_tty = isatty(STDERR_FILENO);
   qInstallMessageHandler(journal_message_handler);
 }

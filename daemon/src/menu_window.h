@@ -48,4 +48,7 @@ class Menu_window
   static constexpr int _max_visible_items = 15;
   static constexpr int _item_height = 34;
   static constexpr int _header_height = 38;
+  static constexpr int _input_height = 42;
+  static constexpr int _message_bar_height = 26;
+  static constexpr int _border_width = 1;
 };
