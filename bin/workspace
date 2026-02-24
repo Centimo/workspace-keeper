@@ -471,7 +471,7 @@ cmd_close() {
     local project_dir
     project_dir=$(<"$ws_dir/project_dir")
     local clion_wid
-    clion_wid=$(find_clion_window_for_project "$project_dir")
+    clion_wid=$(find_clion_window_for_project "$project_dir") || true
     if [[ -n "$clion_wid" ]]; then
       wmctrl -i -c "$clion_wid"
     fi
