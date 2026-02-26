@@ -1,5 +1,5 @@
 #!/bin/bash
-# Workspace manager: creates KDE virtual desktops with CLion + WezTerm (tmux) + Floorp
+# Workspace manager: creates KDE virtual desktops with CLion + WezTerm + Floorp
 #
 # Usage:
 #   workspace create <path> [name]  — create or switch to workspace
@@ -208,6 +208,13 @@ find_bt_window_for_x_window() {
   return 1
 }
 
+workspace_has_wezterm_panes() {
+  local ws_name="$1"
+  wezterm cli list --format json 2>/dev/null \
+    | jq -e --arg ws "$ws_name" '[.[] | select(.workspace == $ws)] | length > 0' \
+    >/dev/null 2>&1
+}
+
 find_clion_window_for_project() {
   local project_dir="$1"
   wmctrl -l | grep -F "[$project_dir]" | awk '{print $1}' | head -1
@@ -317,14 +324,14 @@ cmd_create() {
     log "desktop switch confirmed"
   fi
 
-  # --- WezTerm + tmux ---
+  # --- WezTerm ---
   local before_wez
   before_wez=$(wmctrl -l | awk '{print $1}' | sort)
 
-  if tmux has-session -t "=$ws_name" 2>/dev/null; then
-    wezterm start --always-new-process -- tmux attach -t "=$ws_name" &
+  if workspace_has_wezterm_panes "$ws_name"; then
+    wezterm start --always-new-process --domain unix --workspace "$ws_name" --attach &
   else
-    wezterm start --always-new-process -- tmux new-session -s "$ws_name" -c "$project_dir" &
+    wezterm start --always-new-process --domain unix --workspace "$ws_name" --cwd "$project_dir" &
   fi
 
   local wez_wid
@@ -349,7 +356,7 @@ cmd_create() {
 
     "$HOME/.local/share/JetBrains/Toolbox/apps/clion/bin/clion" "$project_dir" &
 
-    clion_wid=$(wait_for_new_window "$before_clion" 20 "Floorp|tmux") || true
+    clion_wid=$(wait_for_new_window "$before_clion" 20 "Floorp") || true
     if [[ -n "$clion_wid" ]]; then
       log "detected new CLion window $clion_wid"
       kwin_move_to_desktop "$clion_wid" "$desktop_idx"
@@ -486,9 +493,15 @@ cmd_close() {
     fi
   fi
 
-  # Kill tmux session — WezTerm closes automatically when shell exits
-  if tmux has-session -t "=$ws_name" 2>/dev/null; then
-    tmux kill-session -t "=$ws_name"
+  # Kill all panes of this workspace in mux-server.
+  # GUI window closes automatically when no panes remain.
+  local pane_ids
+  pane_ids=$(wezterm cli list --format json 2>/dev/null \
+    | jq -r --arg ws "$ws_name" '.[] | select(.workspace == $ws) | .pane_id')
+  if [[ -n "$pane_ids" ]]; then
+    while IFS= read -r pane_id; do
+      wezterm cli kill-pane --pane-id "$pane_id" 2>/dev/null || true
+    done <<< "$pane_ids"
   fi
 
   local desktop_id
@@ -548,6 +561,13 @@ cmd_list() {
 
 cmd_handle_response() {
   local response="${1:?Usage: workspace handle-response \"<response>\"}"
+
+  # Parse optional tab-separated restore window ID
+  local restore_wid=""
+  if [[ "$response" == *$'\t'* ]]; then
+    restore_wid="${response##*$'\t'}"
+    response="${response%%$'\t'*}"
+  fi
 
   local action selected
   action="${response%% *}"
@@ -610,6 +630,9 @@ cmd_handle_response() {
       if [[ -n "$ws_name" ]] && [[ -n "${active_desktops[$ws_name]+x}" ]]; then
         # Active workspace — switch to it
         wmctrl -s "${active_desktops[$ws_name]}"
+        if [[ -n "$restore_wid" ]]; then
+          wmctrl -i -a "$restore_wid"
+        fi
       elif [[ -n "$ws_name" ]] && [[ -d "$WORKSPACE_DIR/$ws_name" ]]; then
         # Saved workspace — activate it
         if [[ -n "$ws_project_dir" ]]; then

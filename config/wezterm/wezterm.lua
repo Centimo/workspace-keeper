@@ -4,6 +4,11 @@ local config = wezterm.config_builder()
 -- Shell
 config.default_prog = { '/bin/zsh' }
 
+-- Mux server (unix domain)
+config.unix_domains = {
+  { name = 'unix' },
+}
+
 -- Font
 config.font = wezterm.font('Hack')
 config.font_size = 16.0
@@ -40,6 +45,31 @@ config.colors = {
     '#16a085', -- bright cyan
     '#ffffff', -- bright white
   },
+
+  tab_bar = {
+    background = '#232627',
+    active_tab = {
+      bg_color = '#1d99f3',
+      fg_color = '#ffffff',
+      intensity = 'Bold',
+    },
+    inactive_tab = {
+      bg_color = '#232627',
+      fg_color = '#fcfcfc',
+    },
+    inactive_tab_hover = {
+      bg_color = '#31363b',
+      fg_color = '#fcfcfc',
+    },
+    new_tab = {
+      bg_color = '#232627',
+      fg_color = '#7f8c8d',
+    },
+    new_tab_hover = {
+      bg_color = '#31363b',
+      fg_color = '#fcfcfc',
+    },
+  },
 }
 
 -- Opacity
@@ -51,10 +81,14 @@ config.scrollback_lines = 10000
 -- Window decorations (no title bar)
 config.window_decorations = 'RESIZE'
 
+-- Close GUI without confirmation (panes stay alive in mux-server)
+config.window_close_confirmation = 'NeverPrompt'
+
 -- Tab bar
 config.use_fancy_tab_bar = false
 config.hide_tab_bar_if_only_one_tab = true
 config.tab_bar_at_bottom = true
+config.show_new_tab_button_in_tab_bar = false
 
 -- Window
 config.window_padding = {
@@ -64,10 +98,22 @@ config.window_padding = {
   bottom = 0,
 }
 
+-- Tab title format: "N:title" (like tmux #I:#W)
+wezterm.on('format-tab-title', function(tab)
+  local title = tab.active_pane.title
+  if #title > 20 then
+    title = title:sub(1, 20) .. '…'
+  end
+  return string.format(' %d:%s ', tab.tab_index + 1, title)
+end)
+
 -- Keys: Ctrl = text, Alt = signals
 config.keys = {
-  { key = 'LeftArrow',  mods = 'ALT', action = wezterm.action.SendKey { key = 'LeftArrow', mods = 'ALT' } },
-  { key = 'RightArrow', mods = 'ALT', action = wezterm.action.SendKey { key = 'RightArrow', mods = 'ALT' } },
+  -- Tab navigation (native, replaces tmux)
+  { key = 'LeftArrow',  mods = 'ALT', action = wezterm.action.ActivateTabRelative(-1) },
+  { key = 'RightArrow', mods = 'ALT', action = wezterm.action.ActivateTabRelative(1) },
+  { key = 't', mods = 'ALT', action = wezterm.action.SpawnTab('CurrentPaneDomain') },
+  { key = 'w', mods = 'ALT', action = wezterm.action.CloseCurrentTab { confirm = true } },
 
   -- Ctrl+C: always copy, never SIGINT (use Alt+C for SIGINT)
   { key = 'c', mods = 'CTRL', action = wezterm.action.CopyTo('Clipboard') },
@@ -91,68 +137,6 @@ config.keys = {
 
   -- Disable Alt+Enter fullscreen toggle
   { key = 'Enter', mods = 'ALT', action = wezterm.action.DisableDefaultAssignment },
-}
-
--- Mouse: intercept drag for native selection even when tmux has mouse reporting on
-local act = wezterm.action
-config.mouse_bindings = {
-  -- Single click
-  {
-    event = { Down = { streak = 1, button = 'Left' } },
-    mods = 'NONE',
-    mouse_reporting = true,
-    action = act.SelectTextAtMouseCursor('Cell'),
-  },
-  {
-    event = { Drag = { streak = 1, button = 'Left' } },
-    mods = 'NONE',
-    mouse_reporting = true,
-    action = act.ExtendSelectionToMouseCursor('Cell'),
-  },
-  {
-    event = { Up = { streak = 1, button = 'Left' } },
-    mods = 'NONE',
-    mouse_reporting = true,
-    action = act.CompleteSelectionOrOpenLinkAtMouseCursor('ClipboardAndPrimarySelection'),
-  },
-  -- Double click — select word
-  {
-    event = { Down = { streak = 2, button = 'Left' } },
-    mods = 'NONE',
-    mouse_reporting = true,
-    action = act.SelectTextAtMouseCursor('Word'),
-  },
-  {
-    event = { Drag = { streak = 2, button = 'Left' } },
-    mods = 'NONE',
-    mouse_reporting = true,
-    action = act.ExtendSelectionToMouseCursor('Word'),
-  },
-  {
-    event = { Up = { streak = 2, button = 'Left' } },
-    mods = 'NONE',
-    mouse_reporting = true,
-    action = act.CompleteSelection('ClipboardAndPrimarySelection'),
-  },
-  -- Triple click — select line
-  {
-    event = { Down = { streak = 3, button = 'Left' } },
-    mods = 'NONE',
-    mouse_reporting = true,
-    action = act.SelectTextAtMouseCursor('Line'),
-  },
-  {
-    event = { Drag = { streak = 3, button = 'Left' } },
-    mods = 'NONE',
-    mouse_reporting = true,
-    action = act.ExtendSelectionToMouseCursor('Line'),
-  },
-  {
-    event = { Up = { streak = 3, button = 'Left' } },
-    mods = 'NONE',
-    mouse_reporting = true,
-    action = act.CompleteSelection('ClipboardAndPrimarySelection'),
-  },
 }
 
 return config

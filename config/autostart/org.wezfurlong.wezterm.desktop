@@ -1,7 +1,7 @@
 [Desktop Entry]
 Type=Application
-Name=WezTerm
-Exec=/usr/bin/wezterm
+Name=WezTerm Mux Server
+Exec=wezterm-mux-server --daemonize
 Icon=org.wezfurlong.wezterm
 Terminal=false
 Categories=System;TerminalEmulator;
