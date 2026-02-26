@@ -4,8 +4,11 @@
 #include "global_shortcut.h"
 #include "journal_log.h"
 #include "menu_window.h"
+#include "workspace_db.h"
 
 #include <QApplication>
+#include <QDir>
+#include <QStandardPaths>
 
 int main(int argc, char* argv[]) {
   install_journal_handler();
@@ -14,9 +17,13 @@ int main(int argc, char* argv[]) {
   app.setApplicationName("workspace-menu");
   app.setQuitOnLastWindowClosed(false);
 
-  Menu_window window;
+  auto data_dir = QStandardPaths::writableLocation(QStandardPaths::GenericDataLocation)
+    + "/workspace-menu";
+  Workspace_db db(data_dir + "/workspace.db");
 
-  Claude_status_tracker claude_tracker;
+  Menu_window window(db);
+
+  Claude_status_tracker claude_tracker(db);
   // Allocated on heap: QDBusAbstractAdaptor re-parents itself to tracker,
   // so Qt object tree owns its lifetime. Stack allocation would cause double-delete.
   new Claude_status_dbus(claude_tracker);

@@ -9,6 +9,7 @@ class QLabel;
 class QLineEdit;
 class QListWidget;
 class QListWidgetItem;
+class Workspace_db;
 
 class Menu_window
   : public QWidget
@@ -17,7 +18,7 @@ class Menu_window
   Q_OBJECT
 
  public:
-  explicit Menu_window(QWidget* parent = nullptr);
+  explicit Menu_window(Workspace_db& db, QWidget* parent = nullptr);
 
   void activate(qint64 client_timestamp_ms = 0);
   void cancel_session();

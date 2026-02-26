@@ -1,3 +1,4 @@
 daemon/build/
+daemon/build-install/
 daemon/cmake-build-*/
 .idea/

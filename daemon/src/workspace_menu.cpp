@@ -1,13 +1,13 @@
 #include "workspace_menu.h"
+#include "workspace_db.h"
 
 #include <QDir>
-#include <QFile>
 #include <QProcess>
 #include <QRegularExpression>
-#include <QTextStream>
 
-Workspace_menu::Workspace_menu(QObject* parent)
+Workspace_menu::Workspace_menu(Workspace_db& db, QObject* parent)
   : QObject(parent)
+  , _db(db)
 {
   _workspace_dir = qEnvironmentVariable("WORKSPACE_DIR");
 
@@ -83,27 +83,19 @@ void Workspace_menu::load_data() {
   QProcess wmctrl;
   wmctrl.start("wmctrl", {"-d"});
 
-  QSet< QString> active_names;
+  QVector< Desktop_info> desktops;
+
   if (wmctrl.waitForFinished(2000) && wmctrl.exitCode() == 0) {
     auto output = QString::fromUtf8(wmctrl.readAllStandardOutput());
     auto lines = output.split('\n', Qt::SkipEmptyParts);
-
-    // Parse: extract desktop name (everything after geometry like "1920x1080")
-    struct Desktop_info {
-      int index;
-      QString name;
-      bool is_current;
-    };
-    QVector< Desktop_info> desktops;
 
     static const QRegularExpression whitespace_re("\\s+");
     static const QRegularExpression geometry_re("^\\d+x\\d+$");
 
     for (const auto& line : lines) {
       auto parts = line.split(whitespace_re, Qt::SkipEmptyParts);
-      // Field 1 is "*" for current desktop, "-" otherwise
       bool is_current = parts.size() > 1 && parts[1] == "*";
-      // Find the geometry field (NxN pattern), name is everything after it
+
       int geo_idx = -1;
       for (int i = 0; i < parts.size(); ++i) {
         if (parts[i].contains(geometry_re)) {
@@ -118,54 +110,33 @@ void Workspace_menu::load_data() {
         QString name = name_parts.join(' ');
         int index = parts[0].toInt();
         desktops.append({index, name, is_current});
+
+        if (is_current) {
+          _current_desktop_name = name;
+        }
       }
     }
 
-    // Sort by index
     std::sort(desktops.begin(), desktops.end(), [](const auto& a, const auto& b) {
       return a.index < b.index;
     });
-
-    for (const auto& d : desktops) {
-      active_names.insert(d.name);
-      if (d.is_current) {
-        _current_desktop_name = d.name;
-      }
-
-      // Look up project_dir from workspace config
-      QString project_dir;
-      QString ws_config = _workspace_dir + '/' + d.name + "/project_dir";
-      QFile file(ws_config);
-      if (file.open(QIODevice::ReadOnly | QIODevice::Text)) {
-        project_dir = QTextStream(&file).readLine().trimmed();
-      }
-
-      _active_desktops.append({d.name, project_dir});
-    }
   }
 
-  // Read saved workspaces from filesystem
-  QDir ws_dir(_workspace_dir);
-  if (ws_dir.exists()) {
-    auto entries = ws_dir.entryInfoList(QDir::Dirs | QDir::NoDotAndDotDot, QDir::Name);
-    for (const auto& entry : entries) {
-      QString name = entry.fileName();
-      if (active_names.contains(name)) {
-        continue;
-      }
+  // Sync to database
+  _db.sync_active_desktops(desktops, _workspace_dir);
 
-      QString project_dir;
-      QFile file(entry.filePath() + "/project_dir");
-      if (file.open(QIODevice::ReadOnly | QIODevice::Text)) {
-        project_dir = QTextStream(&file).readLine().trimmed();
-      }
+  // Read back from database
+  auto active = _db.active_desktops();
+  for (const auto& ws : active) {
+    _active_desktops.append({ws.name, ws.project_dir});
+  }
 
-      _saved_workspaces.append({name, project_dir});
-    }
+  auto saved = _db.saved_workspaces();
+  for (const auto& ws : saved) {
+    _saved_workspaces.append({ws.name, ws.project_dir});
   }
 }
 
 void Workspace_menu::rebuild_model() {
   _model.rebuild(_filter_text, _active_desktops, _saved_workspaces, _filter_text, _current_desktop_name);
 }
-

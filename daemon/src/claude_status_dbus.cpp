@@ -34,15 +34,15 @@ Claude_status_dbus::Claude_status_dbus(Claude_status_tracker& tracker)
 QString Claude_status_dbus::GetAllStatuses() {
   QJsonArray array;
 
-  const auto& statuses = _tracker.statuses();
-  for (auto it = statuses.constBegin(); it != statuses.constEnd(); ++it) {
+  auto statuses = _tracker.all_statuses();
+  for (const auto& status : statuses) {
     QJsonObject obj;
-    obj["name"] = it.key();
-    obj["state"] = state_to_string(it->state);
-    obj["tool_name"] = it->tool_name;
-    obj["wait_reason"] = it->wait_reason;
-    obj["wait_message"] = it->wait_message;
-    obj["state_since_ms"] = it->state_since_ms;
+    obj["name"] = status.workspace_name;
+    obj["state"] = state_to_string(status.state);
+    obj["tool_name"] = status.tool_name;
+    obj["wait_reason"] = status.wait_reason;
+    obj["wait_message"] = status.wait_message;
+    obj["state_since_ms"] = status.state_since_ms;
     array.append(obj);
   }
 
