@@ -18,9 +18,14 @@ add_executable(workspace-menu
   src/daemon_server.cpp
   src/global_shortcut.cpp
   src/journal_log.cpp
+  src/claude_status_tracker.cpp
+  src/claude_status_server.cpp
+  src/claude_status_dbus.cpp
 )
 
 target_include_directories(workspace-menu PRIVATE ${XCB_INCLUDE_DIRS} ${SYSTEMD_INCLUDE_DIRS})
+
+target_compile_options(workspace-menu PRIVATE -Wall -Wextra -Wpedantic)
 
 target_compile_definitions(workspace-menu PRIVATE QT_MESSAGELOGCONTEXT)
 

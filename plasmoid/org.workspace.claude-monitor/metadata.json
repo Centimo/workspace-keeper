@@ -1,0 +1,22 @@
+{
+  "KPlugin": {
+    "Id": "org.workspace.claude-monitor",
+    "Name": "Claude Monitor",
+    "Description": "Shows Claude Code status per workspace",
+    "Category": "System Information",
+    "Icon": "dialog-information",
+    "Authors": [
+      {
+        "Name": "Centimo",
+        "Email": "Centimo@users.noreply.github.com"
+      }
+    ],
+    "Version": "1.0",
+    "Website": "",
+    "License": "MIT",
+    "EnabledByDefault": true
+  },
+  "X-Plasma-API": "declarativeappletscript",
+  "X-Plasma-MainScript": "ui/main.qml",
+  "KPackageStructure": "Plasma/Applet"
+}

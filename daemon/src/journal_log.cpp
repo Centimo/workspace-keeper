@@ -9,6 +9,7 @@
 Q_LOGGING_CATEGORY(logServer, "workspace-menu.server")
 Q_LOGGING_CATEGORY(logShortcut, "workspace-menu.shortcut")
 Q_LOGGING_CATEGORY(logWindow, "workspace-menu.window")
+Q_LOGGING_CATEGORY(logClaude, "workspace-menu.claude")
 
 static int qt_to_journal_priority(QtMsgType type) {
   switch (type) {
@@ -20,8 +21,6 @@ static int qt_to_journal_priority(QtMsgType type) {
   }
   return LOG_INFO;
 }
-
-static bool stderr_is_tty = false;
 
 static void journal_message_handler(
   QtMsgType type,
@@ -42,12 +41,12 @@ static void journal_message_handler(
     nullptr
   );
 
-  if (stderr_is_tty) {
+  static const bool tty = isatty(STDERR_FILENO);
+  if (tty) {
     fprintf(stderr, "[%s] %s\n", category, utf8.constData());
   }
 }
 
 void install_journal_handler() {
-  stderr_is_tty = isatty(STDERR_FILENO);
   qInstallMessageHandler(journal_message_handler);
 }
