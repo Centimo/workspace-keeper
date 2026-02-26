@@ -39,7 +39,6 @@ echo "Installing workspace-keeper..."
 
 # --- Symlink configs ---
 link config/wezterm/wezterm.lua          "$HOME/.wezterm.lua"
-link config/tmux/tmux.conf               "$HOME/.tmux.conf"
 link bin/workspace                       "$HOME/.local/bin/workspace"
 link config/kde/kwinrulesrc              "$HOME/.config/kwinrulesrc"
 link config/kde/workspace-menu.desktop   "$HOME/.local/share/applications/workspace-menu.desktop"
@@ -69,9 +68,19 @@ docker run --rm -v "$REPO_DIR:/src" -w /src/daemon/build \
   "
 
 mkdir -p "$HOME/.local/bin"
+
+# Stop daemon before overwriting binary (otherwise cp fails with "Text file busy")
+if pkill -x workspace-menu 2>/dev/null; then
+  echo "  Stopped old daemon"
+  sleep 0.5
+fi
+
 cp "$REPO_DIR/daemon/build/workspace-menu" "$HOME/.local/bin/workspace-menu"
 chmod +x "$HOME/.local/bin/workspace-menu"
 echo "  Daemon installed to ~/.local/bin/workspace-menu"
+DISPLAY="${DISPLAY:-:0}" nohup "$HOME/.local/bin/workspace-menu" > /dev/null 2>&1 &
+disown
+echo "  Daemon started (PID $!)"
 
 # --- Rename default desktop ---
 DEFAULT_DESKTOP_ID=$(qdbus --literal org.kde.KWin /VirtualDesktopManager desktops 2>/dev/null \
