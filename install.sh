@@ -37,6 +37,22 @@ generate() {
 
 echo "Installing workspace-keeper..."
 
+# --- Install host runtime dependencies ---
+mapfile -t RUNTIME_DEPS < "$REPO_DIR/daemon/runtime-deps.txt"
+
+missing=()
+for pkg in "${RUNTIME_DEPS[@]}"; do
+  [[ -z "$pkg" ]] && continue
+  if ! dpkg -s "$pkg" &>/dev/null; then
+    missing+=("$pkg")
+  fi
+done
+
+if [[ ${#missing[@]} -gt 0 ]]; then
+  echo "Installing missing runtime dependencies: ${missing[*]}"
+  sudo apt-get install -y "${missing[@]}"
+fi
+
 # --- Symlink configs ---
 link config/wezterm/wezterm.lua          "$HOME/.wezterm.lua"
 link bin/workspace                       "$HOME/.local/bin/workspace"
@@ -52,7 +68,6 @@ chmod +x "$HOME/.local/bin/workspace"
 
 # --- Build daemon ---
 echo "Building workspace-menu daemon..."
-mkdir -p "$REPO_DIR/daemon/build"
 
 DAEMON_IMAGE="workspace-menu-build"
 if ! docker image inspect "$DAEMON_IMAGE" &>/dev/null; then
@@ -60,11 +75,19 @@ if ! docker image inspect "$DAEMON_IMAGE" &>/dev/null; then
   docker build -t "$DAEMON_IMAGE" "$REPO_DIR/daemon"
 fi
 
-docker run --rm -v "$REPO_DIR:/src" -w /src/daemon/build \
+# Use a separate build dir to avoid conflicts with dev builds in daemon/build
+BUILD_DIR="$REPO_DIR/daemon/build-install"
+mkdir -p "$BUILD_DIR"
+
+docker run --rm \
+  --user "$(id -u):$(id -g)" \
+  -v /etc/passwd:/etc/passwd:ro \
+  -v /etc/group:/etc/group:ro \
+  -v "$REPO_DIR:$REPO_DIR" \
+  -w "$BUILD_DIR" \
   "$DAEMON_IMAGE" bash -c "
-    cmake .. -DCMAKE_BUILD_TYPE=Release
+    cmake '$REPO_DIR/daemon' -DCMAKE_BUILD_TYPE=Release
     make -j8
-    chown $(id -u):$(id -g) workspace-menu
   "
 
 mkdir -p "$HOME/.local/bin"
@@ -75,7 +98,7 @@ if pkill -x workspace-menu 2>/dev/null; then
   sleep 0.5
 fi
 
-cp "$REPO_DIR/daemon/build/workspace-menu" "$HOME/.local/bin/workspace-menu"
+cp "$BUILD_DIR/workspace-menu" "$HOME/.local/bin/workspace-menu"
 chmod +x "$HOME/.local/bin/workspace-menu"
 echo "  Daemon installed to ~/.local/bin/workspace-menu"
 DISPLAY="${DISPLAY:-:0}" nohup "$HOME/.local/bin/workspace-menu" > /dev/null 2>&1 &

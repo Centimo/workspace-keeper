@@ -7,13 +7,15 @@
 #include <QVector>
 #include <QPair>
 
+class Workspace_db;
+
 class Workspace_menu : public QObject {
   Q_OBJECT
   Q_PROPERTY(QString filter_text READ filter_text WRITE set_filter_text NOTIFY filter_text_changed)
   Q_PROPERTY(Workspace_model* model READ model CONSTANT)
 
  public:
-  explicit Workspace_menu(QObject* parent = nullptr);
+  explicit Workspace_menu(Workspace_db& db, QObject* parent = nullptr);
 
   void begin_session();
 
@@ -35,6 +37,7 @@ class Workspace_menu : public QObject {
   void load_data();
   void rebuild_model();
 
+  Workspace_db& _db;
   QString _filter_text;
   QString _workspace_dir;
 

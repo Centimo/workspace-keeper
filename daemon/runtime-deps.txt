@@ -1,0 +1,9 @@
+libqt6core6t64
+libqt6gui6t64
+libqt6widgets6t64
+libqt6network6t64
+libqt6dbus6t64
+libqt6sql6t64
+libqt6sql6-sqlite
+libxcb1
+libsystemd0

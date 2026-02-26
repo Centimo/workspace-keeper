@@ -71,8 +71,9 @@ static QString header_style() {
   ).arg(header_x - 1);  // -1 for list widget 1px margin
 }
 
-Menu_window::Menu_window(QWidget* parent)
+Menu_window::Menu_window(Workspace_db& db, QWidget* parent)
   : QWidget(parent)
+  , _menu(db)
 {
   QCoreApplication::instance()->installNativeEventFilter(this);
 

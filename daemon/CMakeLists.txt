@@ -5,7 +5,7 @@ set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_AUTOMOC ON)
 
-find_package(Qt6 REQUIRED COMPONENTS Core Gui Widgets Network DBus)
+find_package(Qt6 REQUIRED COMPONENTS Core Gui Widgets Network DBus Sql)
 find_package(PkgConfig REQUIRED)
 pkg_check_modules(XCB REQUIRED xcb)
 pkg_check_modules(SYSTEMD REQUIRED libsystemd)
@@ -20,6 +20,7 @@ add_executable(workspace-menu
   src/journal_log.cpp
   src/claude_status_tracker.cpp
   src/claude_status_dbus.cpp
+  src/workspace_db.cpp
 )
 
 target_include_directories(workspace-menu PRIVATE ${XCB_INCLUDE_DIRS} ${SYSTEMD_INCLUDE_DIRS})
@@ -34,6 +35,7 @@ target_link_libraries(workspace-menu PRIVATE
   Qt6::Widgets
   Qt6::Network
   Qt6::DBus
+  Qt6::Sql
   ${XCB_LIBRARIES}
   ${SYSTEMD_LIBRARIES}
 )
