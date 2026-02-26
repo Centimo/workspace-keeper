@@ -1,4 +1,5 @@
 #include "daemon_server.h"
+#include "claude_status_tracker.h"
 #include "journal_log.h"
 #include "menu_window.h"
 
@@ -15,9 +16,14 @@ static const QString& workspace_bin() {
   return path;
 }
 
-Daemon_server::Daemon_server(Menu_window& window, QObject* parent)
+Daemon_server::Daemon_server(
+  Menu_window& window,
+  Claude_status_tracker* claude_tracker,
+  QObject* parent
+)
   : QObject(parent)
   , _window(window)
+  , _claude_tracker(claude_tracker)
   , _server(new QLocalServer(this))
 {
   connect(_server, &QLocalServer::newConnection, this, &Daemon_server::on_new_connection);
@@ -54,6 +60,14 @@ void Daemon_server::on_new_connection() {
       disconnect(client, &QLocalSocket::readyRead, this, nullptr);
 
       auto line = QString::fromUtf8(client->readLine()).trimmed();
+
+      // Status messages use tab-delimited protocol: "status\t<workspace>\t<event>\t[args...]"
+      if (line.startsWith("status\t")) {
+        handle_status_line(line);
+        client->disconnectFromServer();
+        return;
+      }
+
       auto parts = line.split(' ');
 
       if (parts.isEmpty() || parts[0] != "show") {
@@ -155,4 +169,22 @@ void Daemon_server::reset_client() {
     _active_client->deleteLater();
     _active_client = nullptr;
   }
+}
+
+void Daemon_server::handle_status_line(const QString& line) {
+  if (!_claude_tracker) {
+    return;
+  }
+
+  auto parts = line.split('\t');
+  if (parts.size() < 3 || parts[1].isEmpty()) {
+    qCWarning(logClaude, "malformed status line: '%s'", qPrintable(line));
+    return;
+  }
+
+  const auto& workspace = parts[1];
+  const auto& event_type = parts[2];
+  auto args = parts.mid(3);
+
+  _claude_tracker->process_event(workspace, event_type, args);
 }
