@@ -91,4 +91,4 @@ if [[ -z "$message" ]]; then
 fi
 
 # Send fire-and-forget to daemon socket via socat
-printf '%s\n' "$message" | socat - UNIX-CONNECT:"$SOCKET_PATH" 2>/dev/null || true
+printf '%b\n' "$message" | socat - UNIX-CONNECT:"$SOCKET_PATH" 2>/dev/null || true

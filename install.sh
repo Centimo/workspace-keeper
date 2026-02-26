@@ -82,6 +82,18 @@ DISPLAY="${DISPLAY:-:0}" nohup "$HOME/.local/bin/workspace-menu" > /dev/null 2>&
 disown
 echo "  Daemon started (PID $!)"
 
+# --- Install plasmoid ---
+echo "Installing Claude Monitor plasmoid..."
+PLASMOID_DIR="$REPO_DIR/plasmoid/org.workspace.claude-monitor"
+PLASMOID_ID="org.workspace.claude-monitor"
+if kpackagetool5 --type Plasma/Applet --show "$PLASMOID_ID" &>/dev/null; then
+  kpackagetool5 --type Plasma/Applet --upgrade "$PLASMOID_DIR"
+  echo "  Plasmoid upgraded"
+else
+  kpackagetool5 --type Plasma/Applet --install "$PLASMOID_DIR"
+  echo "  Plasmoid installed"
+fi
+
 # --- Rename default desktop ---
 DEFAULT_DESKTOP_ID=$(qdbus --literal org.kde.KWin /VirtualDesktopManager desktops 2>/dev/null \
   | grep -oP '"[a-f0-9-]+", "Desktop 1"' | grep -oP '"[a-f0-9-]+"' | tr -d '"')
