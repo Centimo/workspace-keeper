@@ -6,7 +6,7 @@
 set -euo pipefail
 
 WORKSPACE_DIR="${WORKSPACE_DIR:-$HOME/.config/workspaces}"
-SOCKET_PATH="${XDG_RUNTIME_DIR:-/tmp}/workspace-claude-status"
+SOCKET_PATH="/tmp/workspace-menu"
 
 # Read JSON from stdin and extract all needed fields in a single jq call.
 # Note: @tsv escapes backslashes and tabs in values; this is acceptable because
@@ -91,4 +91,4 @@ if [[ -z "$message" ]]; then
 fi
 
 # Send fire-and-forget to daemon socket via socat
-printf '%b\n' "$message" | socat - UNIX-CONNECT:"$SOCKET_PATH" 2>/dev/null || true
+printf '%s\n' "$message" | socat - UNIX-CONNECT:"$SOCKET_PATH" 2>/dev/null || true

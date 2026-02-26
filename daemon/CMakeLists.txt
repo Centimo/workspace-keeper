@@ -19,7 +19,6 @@ add_executable(workspace-menu
   src/global_shortcut.cpp
   src/journal_log.cpp
   src/claude_status_tracker.cpp
-  src/claude_status_server.cpp
   src/claude_status_dbus.cpp
 )
 
