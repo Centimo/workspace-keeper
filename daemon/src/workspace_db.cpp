@@ -4,6 +4,7 @@
 #include <QDateTime>
 #include <QDir>
 #include <QFile>
+#include <QJsonObject>
 #include <QSqlError>
 #include <QSqlQuery>
 #include <QTextStream>
@@ -26,7 +27,10 @@ static QString state_to_string(Claude_state state) {
 }
 
 Workspace_db::Workspace_db(const QString& db_path) {
-  QDir().mkpath(QFileInfo(db_path).absolutePath());
+  auto dir_path = QFileInfo(db_path).absolutePath();
+  if (!QDir().mkpath(dir_path)) {
+    qCCritical(logServer, "failed to create database directory '%s'", qPrintable(dir_path));
+  }
 
   _db = QSqlDatabase::addDatabase("QSQLITE", _connection_name);
   _db.setDatabaseName(db_path);
@@ -51,8 +55,6 @@ Workspace_db::Workspace_db(const QString& db_path) {
 }
 
 Workspace_db::~Workspace_db() {
-  // Must reset member before removeDatabase to avoid Qt warning
-  // about connection still being in use.
   _db.close();
   _db = QSqlDatabase();
   QSqlDatabase::removeDatabase(_connection_name);
@@ -78,6 +80,18 @@ void Workspace_db::create_tables() {
   }
 
   if (!query.exec(
+    "CREATE TABLE IF NOT EXISTS workspace_tab ("
+    "  workspace_name TEXT NOT NULL REFERENCES workspace(name) ON DELETE CASCADE,"
+    "  position INTEGER NOT NULL,"
+    "  url TEXT NOT NULL,"
+    "  PRIMARY KEY (workspace_name, position)"
+    ")"
+  )) {
+    qCCritical(logServer, "failed to create workspace_tab table: %s",
+      qPrintable(query.lastError().text()));
+  }
+
+  if (!query.exec(
     "CREATE TABLE IF NOT EXISTS claude_session ("
     "  workspace_name TEXT PRIMARY KEY REFERENCES workspace(name),"
     "  session_id TEXT,"
@@ -89,6 +103,16 @@ void Workspace_db::create_tables() {
     ")"
   )) {
     qCCritical(logServer, "failed to create claude_session table: %s",
+      qPrintable(query.lastError().text()));
+  }
+
+  if (!query.exec(
+    "CREATE TABLE IF NOT EXISTS meta ("
+    "  key TEXT PRIMARY KEY,"
+    "  value TEXT"
+    ")"
+  )) {
+    qCCritical(logServer, "failed to create meta table: %s",
       qPrintable(query.lastError().text()));
   }
 }
@@ -105,74 +129,107 @@ void Workspace_db::ensure_workspace_exists(const QString& name) {
 
 // --- Workspaces ---
 
-static QString read_project_dir(const QString& path) {
-  QFile file(path);
-  if (!file.open(QIODevice::ReadOnly | QIODevice::Text)) {
-    return {};
+void Workspace_db::create_workspace(const QString& name, const QString& project_dir) {
+  QSqlQuery query(_db);
+  query.prepare(
+    "INSERT INTO workspace (name, project_dir)"
+    " VALUES (?, ?)"
+    " ON CONFLICT(name) DO UPDATE"
+    " SET project_dir = excluded.project_dir"
+  );
+  query.addBindValue(name);
+  query.addBindValue(project_dir);
+
+  if (!query.exec()) {
+    qCWarning(logServer, "create_workspace: failed for '%s': %s",
+      qPrintable(name), qPrintable(query.lastError().text()));
   }
-  return QTextStream(&file).readLine().trimmed();
 }
 
-void Workspace_db::sync_active_desktops(
-  const QVector< Desktop_info>& desktops,
-  const QString& workspace_config_dir
-) {
+QString Workspace_db::get_project_dir(const QString& workspace_name) const {
+  QSqlQuery query(_db);
+  query.prepare("SELECT project_dir FROM workspace WHERE name = ?");
+  query.addBindValue(workspace_name);
+
+  if (query.exec() && query.next()) {
+    return query.value(0).toString();
+  }
+  return {};
+}
+
+QString Workspace_db::find_workspace_by_path(const QString& path) const {
+  QSqlQuery query(_db);
+  // Find all workspaces where project_dir is a prefix of the given path.
+  // The longest match wins (most specific workspace).
+  // Uses SUBSTR instead of LIKE to avoid wildcards in project_dir (e.g. _ in paths).
+  query.prepare(
+    "SELECT name FROM workspace"
+    " WHERE project_dir IS NOT NULL"
+    "   AND project_dir != ''"
+    "   AND (? = project_dir"
+    "     OR SUBSTR(?, 1, LENGTH(project_dir) + 1) = project_dir || '/')"
+    " ORDER BY LENGTH(project_dir) DESC"
+    " LIMIT 1"
+  );
+  query.addBindValue(path);
+  query.addBindValue(path);
+
+  if (query.exec() && query.next()) {
+    return query.value(0).toString();
+  }
+  return {};
+}
+
+QJsonArray Workspace_db::all_workspaces() const {
+  QJsonArray result;
+  QSqlQuery query(_db);
+
+  if (query.exec(
+    "SELECT w.name, w.project_dir, w.is_active,"
+    "  (SELECT COUNT(*) FROM workspace_tab t WHERE t.workspace_name = w.name) AS tab_count"
+    " FROM workspace w"
+    " ORDER BY w.is_active DESC, w.desktop_index, w.name"
+  )) {
+    while (query.next()) {
+      QJsonObject obj;
+      obj["name"] = query.value(0).toString();
+      obj["project_dir"] = query.value(1).toString();
+      obj["is_active"] = query.value(2).toBool();
+      obj["tab_count"] = query.value(3).toInt();
+      result.append(obj);
+    }
+  }
+  return result;
+}
+
+void Workspace_db::sync_active_desktops(const QVector< Desktop_info>& desktops) {
   _db.transaction();
 
-  // Reset all workspaces to inactive
   QSqlQuery reset(_db);
-  reset.exec("UPDATE workspace SET is_active = 0, desktop_index = NULL");
-
-  // Collect names of active desktops for the second loop
-  QSet< QString> active_names;
+  if (!reset.exec("UPDATE workspace SET is_active = 0, desktop_index = NULL")) {
+    qCWarning(logServer, "sync_active_desktops: reset failed: %s",
+      qPrintable(reset.lastError().text()));
+    _db.rollback();
+    return;
+  }
 
   for (const auto& desktop : desktops) {
-    active_names.insert(desktop.name);
-    auto project_dir = read_project_dir(
-      workspace_config_dir + '/' + desktop.name + "/project_dir"
-    );
-
     QSqlQuery query(_db);
     query.prepare(
-      "INSERT INTO workspace (name, project_dir, is_active, desktop_index)"
-      " VALUES (?, ?, 1, ?)"
+      "INSERT INTO workspace (name, is_active, desktop_index)"
+      " VALUES (?, 1, ?)"
       " ON CONFLICT(name) DO UPDATE"
-      " SET project_dir = excluded.project_dir,"
-      "     is_active = 1,"
+      " SET is_active = 1,"
       "     desktop_index = excluded.desktop_index"
     );
     query.addBindValue(desktop.name);
-    query.addBindValue(project_dir.isEmpty() ? QVariant() : project_dir);
     query.addBindValue(desktop.index);
 
     if (!query.exec()) {
       qCWarning(logServer, "sync_active_desktops: failed for '%s': %s",
         qPrintable(desktop.name), qPrintable(query.lastError().text()));
-    }
-  }
-
-  // Ensure saved workspaces (dirs without active desktop) are also in the DB
-  QDir ws_dir(workspace_config_dir);
-  if (ws_dir.exists()) {
-    auto entries = ws_dir.entryInfoList(QDir::Dirs | QDir::NoDotAndDotDot, QDir::Name);
-    for (const auto& entry : entries) {
-      auto name = entry.fileName();
-      if (active_names.contains(name)) {
-        continue;  // Already processed above
-      }
-
-      auto project_dir = read_project_dir(entry.filePath() + "/project_dir");
-
-      QSqlQuery query(_db);
-      query.prepare(
-        "INSERT INTO workspace (name, project_dir)"
-        " VALUES (?, ?)"
-        " ON CONFLICT(name) DO UPDATE"
-        " SET project_dir = excluded.project_dir"
-      );
-      query.addBindValue(name);
-      query.addBindValue(project_dir.isEmpty() ? QVariant() : project_dir);
-      query.exec();
+      _db.rollback();
+      return;
     }
   }
 
@@ -217,6 +274,68 @@ QVector< Workspace_info> Workspace_db::saved_workspaces() const {
   return result;
 }
 
+// --- Tabs ---
+
+void Workspace_db::set_tabs(const QString& workspace_name, const QStringList& urls) {
+  ensure_workspace_exists(workspace_name);
+
+  _db.transaction();
+
+  QSqlQuery del(_db);
+  del.prepare("DELETE FROM workspace_tab WHERE workspace_name = ?");
+  del.addBindValue(workspace_name);
+  if (!del.exec()) {
+    qCWarning(logServer, "set_tabs: failed to delete tabs for '%s': %s",
+      qPrintable(workspace_name), qPrintable(del.lastError().text()));
+    _db.rollback();
+    return;
+  }
+
+  QSqlQuery insert(_db);
+  insert.prepare(
+    "INSERT INTO workspace_tab (workspace_name, position, url)"
+    " VALUES (?, ?, ?)"
+  );
+
+  bool ok = true;
+  for (int i = 0; i < urls.size(); ++i) {
+    insert.addBindValue(workspace_name);
+    insert.addBindValue(i);
+    insert.addBindValue(urls[i]);
+    if (!insert.exec()) {
+      qCWarning(logServer, "set_tabs: failed to insert tab %d for '%s': %s",
+        i, qPrintable(workspace_name), qPrintable(insert.lastError().text()));
+      ok = false;
+      break;
+    }
+  }
+
+  if (!ok) {
+    _db.rollback();
+    return;
+  }
+
+  _db.commit();
+}
+
+QStringList Workspace_db::get_tabs(const QString& workspace_name) const {
+  QStringList result;
+  QSqlQuery query(_db);
+  query.prepare(
+    "SELECT url FROM workspace_tab"
+    " WHERE workspace_name = ?"
+    " ORDER BY position"
+  );
+  query.addBindValue(workspace_name);
+
+  if (query.exec()) {
+    while (query.next()) {
+      result.append(query.value(0).toString());
+    }
+  }
+  return result;
+}
+
 // --- Claude status ---
 
 qint64 Workspace_db::set_claude_state(
@@ -251,6 +370,7 @@ qint64 Workspace_db::set_claude_state(
   if (!query.exec()) {
     qCWarning(logClaude, "set_claude_state: failed for '%s': %s",
       qPrintable(workspace), qPrintable(query.lastError().text()));
+    return -1;
   }
 
   return now;
@@ -280,6 +400,7 @@ qint64 Workspace_db::start_claude_session(const QString& workspace, const QStrin
   if (!query.exec()) {
     qCWarning(logClaude, "start_claude_session: failed for '%s': %s",
       qPrintable(workspace), qPrintable(query.lastError().text()));
+    return -1;
   }
 
   return now;
@@ -305,6 +426,7 @@ qint64 Workspace_db::end_claude_session(const QString& workspace) {
   if (!query.exec()) {
     qCWarning(logClaude, "end_claude_session: failed for '%s': %s",
       qPrintable(workspace), qPrintable(query.lastError().text()));
+    return -1;
   }
 
   return now;
@@ -323,11 +445,11 @@ QVector< Claude_workspace_status> Workspace_db::all_claude_statuses() const {
     while (query.next()) {
       Claude_workspace_status status;
       status.workspace_name = query.value(0).toString();
-      status.session_id = query.value(1).toString();
-      status.state = state_from_string(query.value(2).toString());
-      status.tool_name = query.value(3).toString();
-      status.wait_reason = query.value(4).toString();
-      status.wait_message = query.value(5).toString();
+      status.session_id     = query.value(1).toString();
+      status.state          = state_from_string(query.value(2).toString());
+      status.tool_name      = query.value(3).toString();
+      status.wait_reason    = query.value(4).toString();
+      status.wait_message   = query.value(5).toString();
       status.state_since_ms = query.value(6).toLongLong();
       result.append(status);
     }
@@ -348,13 +470,74 @@ std::optional< Claude_workspace_status> Workspace_db::claude_status(const QStrin
   if (query.exec() && query.next()) {
     Claude_workspace_status status;
     status.workspace_name = query.value(0).toString();
-    status.session_id = query.value(1).toString();
-    status.state = state_from_string(query.value(2).toString());
-    status.tool_name = query.value(3).toString();
-    status.wait_reason = query.value(4).toString();
-    status.wait_message = query.value(5).toString();
+    status.session_id     = query.value(1).toString();
+    status.state          = state_from_string(query.value(2).toString());
+    status.tool_name      = query.value(3).toString();
+    status.wait_reason    = query.value(4).toString();
+    status.wait_message   = query.value(5).toString();
     status.state_since_ms = query.value(6).toLongLong();
     return status;
   }
   return std::nullopt;
+}
+
+// --- Migration ---
+
+void Workspace_db::migrate_from_config_dir(const QString& config_dir) {
+  QDir dir(config_dir);
+  if (!dir.exists()) {
+    return;
+  }
+
+  QSqlQuery check(_db);
+  check.prepare("SELECT value FROM meta WHERE key = 'migration_completed'");
+  if (check.exec() && check.next()) {
+    return;
+  }
+
+  qCInfo(logServer, "migrating workspaces from '%s'", qPrintable(config_dir));
+
+  auto entries = dir.entryInfoList(QDir::Dirs | QDir::NoDotAndDotDot, QDir::Name);
+  for (const auto& entry : entries) {
+    auto name = entry.fileName();
+    auto project_dir_path = entry.filePath() + "/project_dir";
+
+    QFile pd_file(project_dir_path);
+    if (!pd_file.open(QIODevice::ReadOnly | QIODevice::Text)) {
+      continue;
+    }
+    auto project_dir = QTextStream(&pd_file).readLine().trimmed();
+    if (project_dir.isEmpty()) {
+      continue;
+    }
+
+    create_workspace(name, project_dir);
+
+    // Migrate tabs
+    auto tabs_path = entry.filePath() + "/tabs.txt";
+    QFile tabs_file(tabs_path);
+    if (tabs_file.open(QIODevice::ReadOnly | QIODevice::Text)) {
+      QStringList urls;
+      QTextStream stream(&tabs_file);
+      while (!stream.atEnd()) {
+        auto line = stream.readLine().trimmed();
+        if (!line.isEmpty()) {
+          urls.append(line);
+        }
+      }
+      if (!urls.isEmpty()) {
+        set_tabs(name, urls);
+      }
+    }
+
+    qCInfo(logServer, "migrated workspace '%s' (project_dir='%s')",
+      qPrintable(name), qPrintable(project_dir));
+  }
+
+  QSqlQuery mark(_db);
+  mark.prepare("INSERT OR REPLACE INTO meta (key, value) VALUES ('migration_completed', '1')");
+  if (!mark.exec()) {
+    qCWarning(logServer, "failed to mark migration as completed: %s",
+      qPrintable(mark.lastError().text()));
+  }
 }

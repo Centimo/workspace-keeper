@@ -13,6 +13,7 @@ enum class Entry_type {
 struct Entry {
   QString display_text;
   QString data;
+  QString name;
   Entry_type type;
   bool is_active;
 };

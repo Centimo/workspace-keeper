@@ -39,7 +39,6 @@ class Workspace_menu : public QObject {
 
   Workspace_db& _db;
   QString _filter_text;
-  QString _workspace_dir;
 
   QVector< QPair< QString, QString>> _active_desktops;
   QVector< QPair< QString, QString>> _saved_workspaces;

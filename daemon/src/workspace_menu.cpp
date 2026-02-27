@@ -1,20 +1,13 @@
 #include "workspace_menu.h"
 #include "workspace_db.h"
 
-#include <QDir>
 #include <QProcess>
 #include <QRegularExpression>
 
 Workspace_menu::Workspace_menu(Workspace_db& db, QObject* parent)
   : QObject(parent)
   , _db(db)
-{
-  _workspace_dir = qEnvironmentVariable("WORKSPACE_DIR");
-
-  if (_workspace_dir.isEmpty()) {
-    _workspace_dir = QDir::homePath() + "/.config/workspaces";
-  }
-}
+{}
 
 void Workspace_menu::begin_session() {
   _filter_text.clear();
@@ -123,7 +116,7 @@ void Workspace_menu::load_data() {
   }
 
   // Sync to database
-  _db.sync_active_desktops(desktops, _workspace_dir);
+  _db.sync_active_desktops(desktops);
 
   // Read back from database
   auto active = _db.active_desktops();
