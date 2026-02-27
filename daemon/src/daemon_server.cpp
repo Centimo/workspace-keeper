@@ -1,5 +1,4 @@
 #include "daemon_server.h"
-#include "claude_status_tracker.h"
 #include "journal_log.h"
 #include "menu_window.h"
 
@@ -16,14 +15,9 @@ static const QString& workspace_bin() {
   return path;
 }
 
-Daemon_server::Daemon_server(
-  Menu_window& window,
-  Claude_status_tracker* claude_tracker,
-  QObject* parent
-)
+Daemon_server::Daemon_server(Menu_window& window, QObject* parent)
   : QObject(parent)
   , _window(window)
-  , _claude_tracker(claude_tracker)
   , _server(new QLocalServer(this))
 {
   connect(_server, &QLocalServer::newConnection, this, &Daemon_server::on_new_connection);
@@ -45,8 +39,6 @@ void Daemon_server::on_new_connection() {
   while (_server->hasPendingConnections()) {
     auto* client = _server->nextPendingConnection();
 
-    // Early disconnect handler: clean up clients that disconnect before
-    // being promoted to _active_client
     connect(client, &QLocalSocket::disconnected, this, [client]() {
       client->deleteLater();
     });
@@ -56,18 +48,9 @@ void Daemon_server::on_new_connection() {
         return;
       }
 
-      // Disconnect readyRead so this lambda doesn't fire again
       disconnect(client, &QLocalSocket::readyRead, this, nullptr);
 
       auto line = QString::fromUtf8(client->readLine()).trimmed();
-
-      // Status messages use tab-delimited protocol: "status\t<workspace>\t<event>\t[args...]"
-      if (line.startsWith("status\t")) {
-        handle_status_line(line);
-        client->disconnectFromServer();
-        return;
-      }
-
       auto parts = line.split(' ');
 
       if (parts.isEmpty() || parts[0] != "show") {
@@ -89,7 +72,6 @@ void Daemon_server::on_new_connection() {
         return;
       }
 
-      // Replace early cleanup handler with session-aware one
       disconnect(client, &QLocalSocket::disconnected, this, nullptr);
 
       _active_client = client;
@@ -123,8 +105,6 @@ void Daemon_server::on_session_finished(const QString& response) {
       connect(process, &QProcess::errorOccurred, this, [process](QProcess::ProcessError err) {
         qCWarning(logServer, "handle-response: process error %d: %s",
           static_cast<int>(err), qPrintable(process->errorString()));
-        // Only delete here for FailedToStart — finished() won't be emitted in that case.
-        // For all other errors, finished() follows and handles cleanup.
         if (err == QProcess::FailedToStart) {
           process->deleteLater();
         }
@@ -149,8 +129,6 @@ void Daemon_server::on_client_disconnected() {
     return;
   }
 
-  // Null out _active_client BEFORE cancel_session to prevent re-entrant
-  // on_session_finished from writing to the already-disconnected socket
   reset_client();
   _window.cancel_session();
 }
@@ -166,25 +144,8 @@ void Daemon_server::trigger_from_shortcut() {
 
 void Daemon_server::reset_client() {
   if (_active_client) {
+    disconnect(_active_client, &QLocalSocket::disconnected, this, nullptr);
     _active_client->deleteLater();
     _active_client = nullptr;
   }
-}
-
-void Daemon_server::handle_status_line(const QString& line) {
-  if (!_claude_tracker) {
-    return;
-  }
-
-  auto parts = line.split('\t');
-  if (parts.size() < 3 || parts[1].isEmpty()) {
-    qCWarning(logClaude, "malformed status line: '%s'", qPrintable(line));
-    return;
-  }
-
-  const auto& workspace = parts[1];
-  const auto& event_type = parts[2];
-  auto args = parts.mid(3);
-
-  _claude_tracker->process_event(workspace, event_type, args);
 }

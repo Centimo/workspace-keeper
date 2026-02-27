@@ -133,6 +133,10 @@ Menu_window::Menu_window(Workspace_db& db, QWidget* parent)
 }
 
 void Menu_window::activate(qint64 client_timestamp_ms) {
+  if (isVisible()) {
+    return;
+  }
+
   _shown = false;
   _client_timestamp_ms = client_timestamp_ms;
   _saved_keyboard_layout = -1;

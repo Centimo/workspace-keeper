@@ -22,7 +22,9 @@ void Claude_status_tracker::process_event(
 ) {
   if (event_type == "session_start") {
     auto since = _db.start_claude_session(workspace, args.value(0));
-    emit status_changed(workspace, Claude_state::IDLE, {}, {}, {}, since);
+    if (since >= 0) {
+      emit status_changed(workspace, Claude_state::IDLE, {}, {}, {}, since);
+    }
   }
   else if (event_type == "working") {
     auto tool_name = args.value(0);
@@ -31,8 +33,11 @@ void Claude_status_tracker::process_event(
   else if (event_type == "post_tool") {
     auto current = _db.claude_status(workspace);
     if (current && current->state == Claude_state::WORKING) {
-      // Between tool calls — still working, refresh timestamp
-      _db.set_claude_state(workspace, Claude_state::WORKING, current->tool_name);
+      // Between tool calls — still working, refresh timestamp and notify
+      auto since = _db.set_claude_state(workspace, Claude_state::WORKING, current->tool_name);
+      if (since >= 0) {
+        emit status_changed(workspace, Claude_state::WORKING, current->tool_name, {}, {}, since);
+      }
     }
     else {
       set_state(workspace, Claude_state::WORKING);
@@ -52,7 +57,9 @@ void Claude_status_tracker::process_event(
   }
   else if (event_type == "session_end") {
     auto since = _db.end_claude_session(workspace);
-    emit status_changed(workspace, Claude_state::NOT_RUNNING, {}, {}, {}, since);
+    if (since >= 0) {
+      emit status_changed(workspace, Claude_state::NOT_RUNNING, {}, {}, {}, since);
+    }
   }
 }
 
@@ -68,11 +75,18 @@ void Claude_status_tracker::set_state(
   const QString& wait_message
 ) {
   auto current = _db.claude_status(workspace);
-  if (current && current->state == state) {
+  if (current && current->state == state
+    && current->tool_name == tool_name
+    && current->wait_reason == wait_reason
+    && current->wait_message == wait_message)
+  {
     return;
   }
 
   auto since = _db.set_claude_state(workspace, state, tool_name, wait_reason, wait_message);
+  if (since < 0) {
+    return;
+  }
   emit status_changed(workspace, state, tool_name, wait_reason, wait_message, since);
 }
 

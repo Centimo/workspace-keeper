@@ -2,8 +2,10 @@
 
 #include "claude_types.h"
 
+#include <QJsonArray>
 #include <QSqlDatabase>
 #include <QString>
+#include <QStringList>
 #include <QVector>
 
 #include <optional>
@@ -34,16 +36,30 @@ class Workspace_db {
 
   // --- Workspaces ---
 
+  /// Insert or update a workspace with its project directory.
+  void create_workspace(const QString& name, const QString& project_dir);
+
+  /// @return project directory for the workspace, empty if not found.
+  QString get_project_dir(const QString& workspace_name) const;
+
+  /// Find workspace whose project_dir is a prefix of @p path (longest match).
+  /// @return workspace name, empty if no match.
+  QString find_workspace_by_path(const QString& path) const;
+
+  /// @return JSON array of all workspaces with name, project_dir, tab_count, is_active.
+  QJsonArray all_workspaces() const;
+
   /// Update active desktop state from the window manager snapshot.
   /// Marks matching workspaces as active, clears active flag for the rest.
-  /// Reads project_dir from ~/.config/workspaces/<name>/project_dir files.
-  void sync_active_desktops(
-    const QVector< Desktop_info>& desktops,
-    const QString& workspace_config_dir
-  );
+  void sync_active_desktops(const QVector< Desktop_info>& desktops);
 
   QVector< Workspace_info> active_desktops() const;
   QVector< Workspace_info> saved_workspaces() const;
+
+  // --- Tabs ---
+
+  void set_tabs(const QString& workspace_name, const QStringList& urls);
+  QStringList get_tabs(const QString& workspace_name) const;
 
   // --- Claude status ---
 
@@ -64,6 +80,12 @@ class Workspace_db {
 
   QVector< Claude_workspace_status> all_claude_statuses() const;
   std::optional< Claude_workspace_status> claude_status(const QString& workspace) const;
+
+  // --- Migration ---
+
+  /// One-time migration: import workspaces from config directory files into DB.
+  /// Reads project_dir and tabs.txt from each subdirectory.
+  void migrate_from_config_dir(const QString& config_dir);
 
  private:
   void create_tables();

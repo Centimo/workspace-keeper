@@ -13,8 +13,9 @@
 set -euo pipefail
 
 _START_MS=$(date +%s%3N)
-WORKSPACE_DIR="$HOME/.config/workspaces"
-mkdir -p "$WORKSPACE_DIR"
+DBUS_SERVICE="org.workspace.Manager"
+DBUS_PATH="/Manager"
+DBUS_IFACE="org.workspace.Manager"
 
 log() {
   local msg="$1"
@@ -22,6 +23,17 @@ log() {
   ts=$(date '+%H:%M:%S.%3N')
   echo "[$ts] $msg" >&2
   logger -t workspace --id=$$ -- "$msg"
+}
+
+require_daemon() {
+  if ! qdbus "$DBUS_SERVICE" "$DBUS_PATH" 2>/dev/null | grep -q .; then
+    echo "Error: workspace daemon not running (D-Bus service $DBUS_SERVICE unavailable)" >&2
+    exit 1
+  fi
+}
+
+dbus_call() {
+  qdbus "$DBUS_SERVICE" "$DBUS_PATH" "${DBUS_IFACE}.$1" "${@:2}"
 }
 
 get_current_desktop_name() {
@@ -57,9 +69,24 @@ get_desktop_index() {
 
 get_desktop_id_by_name() {
   local name="$1"
-  qdbus --literal org.kde.KWin /VirtualDesktopManager desktops 2>/dev/null \
-    | grep -oP '"[a-f0-9A-F-]+", "'"$name"'"' \
-    | grep -oP '"[a-f0-9A-F-]+"' | head -1 | tr -d '"'
+  local desktops
+  desktops=$(qdbus --literal org.kde.KWin /VirtualDesktopManager desktops 2>/dev/null) || return
+  # desktops format: [Variant(QDBusRawType::=ss): "uuid1", "name1", ...] — pairs of (id, name)
+  # Extract all id-name pairs, then find the one matching our name.
+  local ids names
+  ids=()
+  names=()
+  while IFS= read -r val; do
+    ids+=("$val")
+    IFS= read -r val || break
+    names+=("$val")
+  done < <(echo "$desktops" | grep -oP '"[^"]*"' | sed 's/^"//; s/"$//')
+  for (( i=0; i<${#names[@]}; i++ )); do
+    if [[ "${names[$i]}" == "$name" ]]; then
+      echo "${ids[$i]}"
+      return 0
+    fi
+  done
 }
 
 create_desktop() {
@@ -90,7 +117,8 @@ kwin_move_to_desktop() {
 
   log "move wid=$hex_wid (dec=$dec_wid) to desktop=$desktop_idx (kwin=$kwin_desktop)"
 
-  local script="/tmp/kwin-move-$$.js"
+  local script
+  script=$(mktemp /tmp/kwin-move-XXXXXXXX.js)
   cat > "$script" << JSEOF
 (function() {
   function moveWindow(client) {
@@ -150,7 +178,8 @@ kwin_resync_desktops_above() {
 
   log "resync: bouncing windows on desktops above removed index $removed_idx"
 
-  local script="/tmp/kwin-resync-$$.js"
+  local script
+  script=$(mktemp /tmp/kwin-resync-XXXXXXXX.js)
   cat > "$script" << JSEOF
 (function() {
   var clients = workspace.clientList();
@@ -229,12 +258,14 @@ find_floorp_on_desktop() {
 # $1 — sorted list of window IDs before launch
 # $2 — timeout in seconds
 # $3 — optional regex to exclude (matched against window title)
+# $4 — optional WM_CLASS substring to require (positive match)
 wait_for_new_window() {
   local before="$1"
   local timeout="${2:-8}"
   local filter="${3:-}"
+  local wm_class_match="${4:-}"
 
-  log "waiting for new window (timeout=${timeout}s, filter='$filter')"
+  log "waiting for new window (timeout=${timeout}s, filter='$filter', wm_class='$wm_class_match')"
   local deadline=$((SECONDS + timeout))
   while (( SECONDS < deadline )); do
     local after
@@ -248,6 +279,13 @@ wait_for_new_window() {
         local title
         title=$(xprop -id "$wid" _NET_WM_NAME 2>/dev/null | sed 's/.*= "\(.*\)"/\1/' || true)
         if echo "$title" | grep -qiE "$filter"; then
+          continue
+        fi
+      fi
+      if [[ -n "$wm_class_match" ]]; then
+        local wm_class
+        wm_class=$(xprop -id "$wid" WM_CLASS 2>/dev/null || true)
+        if ! echo "$wm_class" | grep -qF "$wm_class_match"; then
           continue
         fi
       fi
@@ -271,9 +309,9 @@ cmd_create() {
   fi
 
   local ws_name="${2:-$(basename "$project_dir")}"
-  local ws_dir="$WORKSPACE_DIR/$ws_name"
-  mkdir -p "$ws_dir"
-  echo "$project_dir" > "$ws_dir/project_dir"
+
+  require_daemon
+  dbus_call CreateWorkspace "$ws_name" "$project_dir"
 
   log "create workspace '$ws_name' for $project_dir"
 
@@ -335,7 +373,7 @@ cmd_create() {
   fi
 
   local wez_wid
-  wez_wid=$(wait_for_new_window "$before_wez" 8) || true
+  wez_wid=$(wait_for_new_window "$before_wez" 8 "" "org.wezfurlong.wezterm") || true
   if [[ -n "$wez_wid" ]]; then
     log "detected WezTerm window $wez_wid"
     kwin_move_to_desktop "$wez_wid" "$desktop_idx"
@@ -356,7 +394,7 @@ cmd_create() {
 
     "$HOME/.local/share/JetBrains/Toolbox/apps/clion/bin/clion" "$project_dir" &
 
-    clion_wid=$(wait_for_new_window "$before_clion" 20 "Floorp") || true
+    clion_wid=$(wait_for_new_window "$before_clion" 20 "Floorp" "jetbrains-clion") || true
     if [[ -n "$clion_wid" ]]; then
       log "detected new CLion window $clion_wid"
       kwin_move_to_desktop "$clion_wid" "$desktop_idx"
@@ -370,11 +408,14 @@ cmd_create() {
   local before_floorp
   before_floorp=$(wmctrl -l | awk '/Ablaze Floorp/ {print $1}' | sort)
 
-  local tabs_file="$ws_dir/tabs.txt"
-  if [[ -f "$tabs_file" ]] && [[ -s "$tabs_file" ]]; then
-    floorp --new-window "$(head -1 "$tabs_file")" &
+  local saved_tabs
+  saved_tabs=$(dbus_call GetTabs "$ws_name")
+  if [[ -n "$saved_tabs" ]]; then
+    local first_tab
+    first_tab=$(echo "$saved_tabs" | head -1)
+    floorp --new-window "$first_tab" &
     sleep 1.5
-    tail -n +2 "$tabs_file" | while IFS= read -r url; do
+    echo "$saved_tabs" | tail -n +2 | while IFS= read -r url; do
       [[ -z "$url" ]] && continue
       floorp --new-tab "$url" &
       sleep 0.15
@@ -418,11 +459,7 @@ cmd_save() {
     ws_name=$(get_current_desktop_name)
   fi
 
-  local ws_dir="$WORKSPACE_DIR/$ws_name"
-  if [[ ! -d "$ws_dir" ]]; then
-    echo "Error: workspace '$ws_name' not found in $WORKSPACE_DIR" >&2
-    exit 1
-  fi
+  require_daemon
 
   local desktop_idx
   desktop_idx=$(get_desktop_index "$ws_name")
@@ -449,12 +486,14 @@ cmd_save() {
     return 1
   fi
 
-  local tabs_file="$ws_dir/tabs.txt"
-  bt list 2>/dev/null | grep "^${bt_wid}\." | awk -F'\t' '{print $3}' \
-    | grep -v '^about:' > "$tabs_file"
+  local tabs
+  tabs=$(bt list 2>/dev/null | grep "^${bt_wid}\." | awk -F'\t' '{print $3}' \
+    | grep -v '^about:')
+
+  dbus_call SetTabs "$ws_name" "$tabs"
 
   local count
-  count=$(wc -l < "$tabs_file")
+  count=$(echo "$tabs" | grep -c . || true)
   echo "Saved $count tabs for workspace '$ws_name'"
 }
 
@@ -465,18 +504,18 @@ cmd_close() {
     ws_name=$(get_current_desktop_name)
   fi
 
+  require_daemon
+
   # Save tabs first
   cmd_save "$ws_name" || echo "Warning: failed to save tabs for '$ws_name'" >&2
 
   local desktop_idx
   desktop_idx=$(get_desktop_index "$ws_name") || true
 
-  local ws_dir="$WORKSPACE_DIR/$ws_name"
-
   # Close CLion window by matching project_dir in window title
-  if [[ -f "$ws_dir/project_dir" ]]; then
-    local project_dir
-    project_dir=$(<"$ws_dir/project_dir")
+  local project_dir
+  project_dir=$(dbus_call GetProjectDir "$ws_name")
+  if [[ -n "$project_dir" ]]; then
     local clion_wid
     clion_wid=$(find_clion_window_for_project "$project_dir") || true
     if [[ -n "$clion_wid" ]]; then
@@ -545,18 +584,13 @@ cmd_pin() {
 }
 
 cmd_list() {
+  require_daemon
+
+  local json
+  json=$(dbus_call ListWorkspaces)
+
   echo "Workspaces:"
-  for ws in "$WORKSPACE_DIR"/*/; do
-    [[ -d "$ws" ]] || continue
-    local name project="" tabs=0 active=""
-    name=$(basename "$ws")
-    [[ -f "$ws/project_dir" ]] && project=$(cat "$ws/project_dir")
-    [[ -f "$ws/tabs.txt" ]] && tabs=$(wc -l < "$ws/tabs.txt")
-    local idx
-    idx=$(get_desktop_index "$name") || true
-    [[ -n "$idx" ]] && active=" [active]"
-    echo "  $name  →  $project  ($tabs saved tabs)$active"
-  done
+  echo "$json" | jq -r '.[] | "  \(.name)  →  \(.project_dir // "")  (\(.tab_count) saved tabs)\(if .is_active then " [active]" else "" end)"'
 }
 
 cmd_handle_response() {
@@ -580,6 +614,8 @@ cmd_handle_response() {
 
   [[ -z "$selected" ]] && return 0
 
+  require_daemon
+
   # Collect active desktops for handle logic
   declare -A active_desktops
   while IFS= read -r line; do
@@ -597,32 +633,21 @@ cmd_handle_response() {
   done < <(wmctrl -d)
 
   # selected is either a workspace name or a directory path.
-  # Resolve: find workspace name by matching project_dir path.
+  # Resolve via D-Bus.
   local ws_name=""
   local ws_project_dir=""
   if [[ "$selected" == /* ]]; then
-    # Path — find workspace that owns this path (or parent)
+    # Path — find workspace whose project_dir matches
     local resolved
     resolved=$(realpath -s "$selected" 2>/dev/null || printf '%s' "$selected")
     resolved="${resolved%/}"
-    for ws in "$WORKSPACE_DIR"/*/; do
-      [[ -d "$ws" ]] || continue
-      [[ -f "$ws/project_dir" ]] || continue
-      local pd
-      pd=$(<"$ws/project_dir")
-      pd="${pd%/}"
-      if [[ "$resolved" == "$pd" ]]; then
-        ws_name=$(basename "$ws")
-        ws_project_dir="$pd"
-        break
-      fi
-    done
+    ws_name=$(dbus_call FindWorkspaceByPath "$resolved")
+    if [[ -n "$ws_name" ]]; then
+      ws_project_dir=$(dbus_call GetProjectDir "$ws_name")
+    fi
   else
     ws_name="$selected"
-    local ws_dir="$WORKSPACE_DIR/$ws_name"
-    if [[ -f "$ws_dir/project_dir" ]]; then
-      ws_project_dir=$(<"$ws_dir/project_dir")
-    fi
+    ws_project_dir=$(dbus_call GetProjectDir "$ws_name")
   fi
 
   case "$action" in
@@ -633,14 +658,9 @@ cmd_handle_response() {
         if [[ -n "$restore_wid" ]]; then
           wmctrl -i -a "$restore_wid"
         fi
-      elif [[ -n "$ws_name" ]] && [[ -d "$WORKSPACE_DIR/$ws_name" ]]; then
+      elif [[ -n "$ws_name" ]] && [[ -n "$ws_project_dir" ]]; then
         # Saved workspace — activate it
-        if [[ -n "$ws_project_dir" ]]; then
-          cmd_create "$ws_project_dir" "$ws_name"
-        else
-          echo "Error: no project_dir for workspace '$ws_name'" >&2
-          return 1
-        fi
+        cmd_create "$ws_project_dir" "$ws_name"
       elif [[ -d "${selected%/}" ]]; then
         # Directory path — create new workspace
         cmd_create "${selected%/}"
@@ -650,7 +670,7 @@ cmd_handle_response() {
       fi
       ;;
     close)
-      if [[ -n "$ws_name" ]] && [[ -d "$WORKSPACE_DIR/$ws_name" ]]; then
+      if [[ -n "$ws_name" ]] && [[ -n "$ws_project_dir" ]]; then
         cmd_close "$ws_name"
       else
         echo "Error: workspace for '$selected' not found" >&2
@@ -664,9 +684,7 @@ cmd_menu() {
   local socket_path="/tmp/workspace-menu"
 
   local response
-  response=$(echo "show $_START_MS" | socat -t999 STDIO UNIX-CONNECT:"$socket_path",shut-none 2>/dev/null)
-
-  if [[ $? -ne 0 ]]; then
+  if ! response=$(echo "show $_START_MS" | socat -t999 STDIO UNIX-CONNECT:"$socket_path",shut-none 2>/dev/null); then
     echo "workspace-menu: daemon not running" >&2
     return 1
   fi

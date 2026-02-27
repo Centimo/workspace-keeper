@@ -21,6 +21,7 @@ add_executable(workspace-menu
   src/claude_status_tracker.cpp
   src/claude_status_dbus.cpp
   src/workspace_db.cpp
+  src/workspace_manager_dbus.cpp
 )
 
 target_include_directories(workspace-menu PRIVATE ${XCB_INCLUDE_DIRS} ${SYSTEMD_INCLUDE_DIRS})

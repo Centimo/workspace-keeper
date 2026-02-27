@@ -127,6 +127,9 @@ config.keys = {
   -- Ctrl+Z: undo (Ctrl+_)
   { key = 'z', mods = 'CTRL', action = wezterm.action.SendKey { key = '_', mods = 'CTRL' } },
 
+  -- Ctrl+Backspace: delete word backward (^H = backward-kill-word in zsh)
+  { key = 'Backspace', mods = 'CTRL', action = wezterm.action.SendKey { key = 'h', mods = 'CTRL' } },
+
   -- Shift+Enter: newline (Claude Code)
   { key = 'Enter', mods = 'SHIFT', action = wezterm.action.SendString('\x1b\r') },
 

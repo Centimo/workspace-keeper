@@ -59,11 +59,11 @@ void Workspace_model::rebuild(
     if (!matches_filter(display)) {
       continue;
     }
-    active_entries.append({display, data_value, Entry_type::WORKSPACE, true});
+    active_entries.append({display, data_value, name, Entry_type::WORKSPACE, true});
   }
 
   if (!active_entries.isEmpty()) {
-    _entries.append({"active", {}, Entry_type::SECTION_HEADER, false});
+    _entries.append({"active", {}, {}, Entry_type::SECTION_HEADER, false});
     _entries.append(active_entries);
   }
 
@@ -75,11 +75,11 @@ void Workspace_model::rebuild(
     if (!matches_filter(display)) {
       continue;
     }
-    saved_entries.append({display, data_value, Entry_type::WORKSPACE, false});
+    saved_entries.append({display, data_value, name, Entry_type::WORKSPACE, false});
   }
 
   if (!saved_entries.isEmpty()) {
-    _entries.append({"saved", {}, Entry_type::SECTION_HEADER, false});
+    _entries.append({"saved", {}, {}, Entry_type::SECTION_HEADER, false});
     _entries.append(saved_entries);
   }
 
@@ -120,14 +120,14 @@ void Workspace_model::rebuild(
           continue;
         }
         QString path = fi.filePath() + '/';
-        path_entries.append({path, path, Entry_type::PATH, false});
+        path_entries.append({path, path, {}, Entry_type::PATH, false});
         if (++count >= 50) {
           break;
         }
       }
 
       if (!path_entries.isEmpty()) {
-        _entries.append({"paths", {}, Entry_type::SECTION_HEADER, false});
+        _entries.append({"paths", {}, {}, Entry_type::SECTION_HEADER, false});
         _entries.append(path_entries);
       }
     }
@@ -138,7 +138,7 @@ void Workspace_model::rebuild(
   if (!current_desktop.isEmpty()) {
     for (int i = 0; i < _entries.size(); ++i) {
       if (_entries[i].type == Entry_type::WORKSPACE
-        && _entries[i].display_text.startsWith(current_desktop))
+        && _entries[i].name == current_desktop)
       {
         _selected_index = i;
         break;
