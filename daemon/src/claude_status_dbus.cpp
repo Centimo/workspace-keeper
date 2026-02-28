@@ -1,4 +1,5 @@
 #include "claude_status_dbus.h"
+#include "enum_strings.h"
 #include "journal_log.h"
 
 #include <QDBusConnection>
@@ -38,7 +39,7 @@ QString Claude_status_dbus::GetAllStatuses() {
   for (const auto& status : statuses) {
     QJsonObject obj;
     obj["name"] = status.workspace_name;
-    obj["state"] = state_to_string(status.state);
+    obj["state"] = to_wire_string(status.state);
     obj["tool_name"] = status.tool_name;
     obj["wait_reason"] = status.wait_reason;
     obj["wait_message"] = status.wait_message;
@@ -58,17 +59,7 @@ void Claude_status_dbus::on_status_changed(
   qint64 state_since_ms
 ) {
   emit StatusChanged(
-    workspace, state_to_string(state),
+    workspace, to_wire_string(state),
     tool_name, wait_reason, wait_message, state_since_ms
   );
-}
-
-QString Claude_status_dbus::state_to_string(Claude_state state) {
-  switch (state) {
-    case Claude_state::NOT_RUNNING: return "not_running";
-    case Claude_state::IDLE:        return "idle";
-    case Claude_state::WORKING:     return "working";
-    case Claude_state::WAITING:     return "waiting";
-  }
-  return "unknown";
 }

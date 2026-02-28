@@ -1,4 +1,5 @@
 daemon/build/
 daemon/build-install/
 daemon/cmake-build-*/
+hooks/claude_constants.sh
 .idea/

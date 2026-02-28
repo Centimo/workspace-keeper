@@ -39,6 +39,13 @@ class Claude_status_tracker : public QObject {
   );
 
  private:
+  void handle_session_start(const QString& workspace, const QStringList& args);
+  void handle_working(const QString& workspace, const QStringList& args);
+  void handle_post_tool(const QString& workspace, const QStringList& args);
+  void handle_stop(const QString& workspace, const QStringList& args);
+  void handle_notification(const QString& workspace, const QStringList& args);
+  void handle_session_end(const QString& workspace, const QStringList& args);
+
   void set_state(
     const QString& workspace,
     Claude_state state,

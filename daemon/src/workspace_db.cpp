@@ -1,4 +1,5 @@
 #include "workspace_db.h"
+#include "enum_strings.h"
 #include "journal_log.h"
 
 #include <QDateTime>
@@ -9,21 +10,14 @@
 #include <QSqlQuery>
 #include <QTextStream>
 
-static Claude_state state_from_string(const QString& s) {
-  if (s == "idle")        return Claude_state::IDLE;
-  if (s == "working")     return Claude_state::WORKING;
-  if (s == "waiting")     return Claude_state::WAITING;
-  return Claude_state::NOT_RUNNING;
-}
-
-static QString state_to_string(Claude_state state) {
-  switch (state) {
-    case Claude_state::NOT_RUNNING: return "not_running";
-    case Claude_state::IDLE:        return "idle";
-    case Claude_state::WORKING:     return "working";
-    case Claude_state::WAITING:     return "waiting";
+static Claude_state parse_state(const QString& s) {
+  auto state = from_wire_string< Claude_state>(s);
+  if (!state) {
+    qCWarning(logClaude, "unknown claude state '%s' in database, defaulting to NOT_RUNNING",
+      qPrintable(s));
+    return Claude_state::NOT_RUNNING;
   }
-  return "not_running";
+  return *state;
 }
 
 Workspace_db::Workspace_db(const QString& db_path) {
@@ -361,7 +355,7 @@ qint64 Workspace_db::set_claude_state(
     "   state_since_ms = excluded.state_since_ms"
   );
   query.addBindValue(workspace);
-  query.addBindValue(state_to_string(state));
+  query.addBindValue(to_wire_string(state));
   query.addBindValue(tool_name.isEmpty() ? QVariant() : tool_name);
   query.addBindValue(wait_reason.isEmpty() ? QVariant() : wait_reason);
   query.addBindValue(wait_message.isEmpty() ? QVariant() : wait_message);
@@ -446,7 +440,7 @@ QVector< Claude_workspace_status> Workspace_db::all_claude_statuses() const {
       Claude_workspace_status status;
       status.workspace_name = query.value(0).toString();
       status.session_id     = query.value(1).toString();
-      status.state          = state_from_string(query.value(2).toString());
+      status.state          = parse_state(query.value(2).toString());
       status.tool_name      = query.value(3).toString();
       status.wait_reason    = query.value(4).toString();
       status.wait_message   = query.value(5).toString();
@@ -471,7 +465,7 @@ std::optional< Claude_workspace_status> Workspace_db::claude_status(const QStrin
     Claude_workspace_status status;
     status.workspace_name = query.value(0).toString();
     status.session_id     = query.value(1).toString();
-    status.state          = state_from_string(query.value(2).toString());
+    status.state          = parse_state(query.value(2).toString());
     status.tool_name      = query.value(3).toString();
     status.wait_reason    = query.value(4).toString();
     status.wait_message   = query.value(5).toString();

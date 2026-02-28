@@ -13,6 +13,7 @@
 
 #include <QDBusInterface>
 #include <QDBusReply>
+#include <QElapsedTimer>
 
 #include <xcb/xcb.h>
 
@@ -141,11 +142,19 @@ void Menu_window::activate(qint64 client_timestamp_ms) {
   _client_timestamp_ms = client_timestamp_ms;
   _saved_keyboard_layout = -1;
 
-  QDBusInterface keyboard("org.kde.keyboard", "/Layouts", "org.kde.KeyboardLayouts");
-  QDBusReply< uint> current_layout = keyboard.call("getLayout");
-  if (current_layout.isValid() && current_layout.value() != 0) {
-    _saved_keyboard_layout = current_layout.value();
-    keyboard.call("setLayout", 0u);
+  {
+    QElapsedTimer timer;
+    timer.start();
+    QDBusInterface keyboard("org.kde.keyboard", "/Layouts", "org.kde.KeyboardLayouts");
+    QDBusReply< uint> current_layout = keyboard.call("getLayout");
+    if (current_layout.isValid() && current_layout.value() != 0) {
+      _saved_keyboard_layout = current_layout.value();
+      keyboard.call("setLayout", 0u);
+    }
+    auto elapsed = timer.elapsed();
+    if (elapsed > 50) {
+      qCWarning(logWindow, "keyboard layout switch took %lld ms (blocking event loop)", elapsed);
+    }
   }
 
   _menu.begin_session();
@@ -171,9 +180,15 @@ void Menu_window::finish_session(const QString& response) {
   hide();
 
   if (_saved_keyboard_layout >= 0) {
+    QElapsedTimer timer;
+    timer.start();
     QDBusInterface keyboard("org.kde.keyboard", "/Layouts", "org.kde.KeyboardLayouts");
     keyboard.call("setLayout", static_cast< uint>(_saved_keyboard_layout));
     _saved_keyboard_layout = -1;
+    auto elapsed = timer.elapsed();
+    if (elapsed > 50) {
+      qCWarning(logWindow, "keyboard layout restore took %lld ms (blocking event loop)", elapsed);
+    }
   }
 
   emit session_finished(response);
