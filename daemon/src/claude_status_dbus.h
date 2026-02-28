@@ -39,7 +39,5 @@ class Claude_status_dbus : public QDBusAbstractAdaptor {
     qint64 state_since_ms
   );
 
-  static QString state_to_string(Claude_state state);
-
   Claude_status_tracker& _tracker;
 };

@@ -5,6 +5,9 @@
 
 set -euo pipefail
 
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+source "$SCRIPT_DIR/claude_constants.sh"
+
 DBUS_SERVICE="org.workspace.Manager"
 DBUS_PATH="/Manager"
 DBUS_IFACE="org.workspace.Manager"
@@ -37,36 +40,37 @@ event_type=""
 args_tsv=""
 case "$hook_event_name" in
   PreToolUse)
-    event_type="working"
+    event_type="$CLAUDE_EVENT_WORKING"
     args_tsv="${tool_name:-unknown}"
     ;;
   PostToolUse)
-    event_type="post_tool"
+    event_type="$CLAUDE_EVENT_POST_TOOL"
     ;;
   Stop)
-    event_type="stop"
+    event_type="$CLAUDE_EVENT_STOP"
     ;;
   Notification)
     case "$notification_type" in
-      permission_prompt|elicitation_dialog)
-        event_type="notification"
+      "$CLAUDE_NOTIFICATION_PERMISSION_PROMPT"|"$CLAUDE_NOTIFICATION_ELICITATION_DIALOG")
+        event_type="$CLAUDE_EVENT_NOTIFICATION"
         args_tsv=$(printf '%s\t%s' "$notification_type" "$notification_message")
         ;;
-      idle_prompt)
-        event_type="notification"
+      "$CLAUDE_NOTIFICATION_IDLE_PROMPT")
+        event_type="$CLAUDE_EVENT_NOTIFICATION"
         args_tsv="${notification_type}"
         ;;
       *)
+        logger -t claude-hook "unknown notification type '$notification_type' for workspace '$workspace'"
         exit 0
         ;;
     esac
     ;;
   SessionStart)
-    event_type="session_start"
+    event_type="$CLAUDE_EVENT_SESSION_START"
     args_tsv="${session_id:-unknown}"
     ;;
   SessionEnd)
-    event_type="session_end"
+    event_type="$CLAUDE_EVENT_SESSION_END"
     ;;
   *)
     exit 0

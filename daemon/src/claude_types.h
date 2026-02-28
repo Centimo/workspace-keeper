@@ -10,6 +10,23 @@ enum class Claude_state {
   WAITING       ///< Blocked on user input (permission prompt or elicitation dialog)
 };
 
+/// Event types received from hook scripts.
+enum class Claude_event {
+  SESSION_START,
+  WORKING,
+  POST_TOOL,
+  STOP,
+  NOTIFICATION,
+  SESSION_END
+};
+
+/// Notification subtypes from Claude Code.
+enum class Claude_notification {
+  PERMISSION_PROMPT,
+  ELICITATION_DIALOG,
+  IDLE_PROMPT
+};
+
 /// Per-workspace snapshot of Claude Code status.
 struct Claude_workspace_status {
   QString workspace_name;

@@ -1,4 +1,5 @@
 #include "claude_status_tracker.h"
+#include "enum_strings.h"
 #include "journal_log.h"
 #include "workspace_db.h"
 
@@ -20,46 +21,86 @@ void Claude_status_tracker::process_event(
   const QString& event_type,
   const QStringList& args
 ) {
-  if (event_type == "session_start") {
-    auto since = _db.start_claude_session(workspace, args.value(0));
+  auto event = from_wire_string< Claude_event>(event_type);
+  if (!event) {
+    qCWarning(logClaude, "unknown event type '%s' for workspace '%s'",
+      qPrintable(event_type), qPrintable(workspace));
+    return;
+  }
+
+  switch (*event) {
+    case Claude_event::SESSION_START: handle_session_start(workspace, args); break;
+    case Claude_event::WORKING:       handle_working(workspace, args);       break;
+    case Claude_event::POST_TOOL:     handle_post_tool(workspace, args);     break;
+    case Claude_event::STOP:          handle_stop(workspace, args);          break;
+    case Claude_event::NOTIFICATION:  handle_notification(workspace, args);  break;
+    case Claude_event::SESSION_END:   handle_session_end(workspace, args);   break;
+  }
+}
+
+void Claude_status_tracker::handle_session_start(
+  const QString& workspace, const QStringList& args
+) {
+  auto since = _db.start_claude_session(workspace, args.value(0));
+  if (since >= 0) {
+    emit status_changed(workspace, Claude_state::IDLE, {}, {}, {}, since);
+  }
+}
+
+void Claude_status_tracker::handle_working(
+  const QString& workspace, const QStringList& args
+) {
+  set_state(workspace, Claude_state::WORKING, args.value(0));
+}
+
+void Claude_status_tracker::handle_post_tool(
+  const QString& workspace, const QStringList& /*args*/
+) {
+  auto current = _db.claude_status(workspace);
+  if (current && current->state == Claude_state::WORKING) {
+    auto since = _db.set_claude_state(workspace, Claude_state::WORKING, current->tool_name);
     if (since >= 0) {
-      emit status_changed(workspace, Claude_state::IDLE, {}, {}, {}, since);
+      emit status_changed(workspace, Claude_state::WORKING, current->tool_name, {}, {}, since);
     }
   }
-  else if (event_type == "working") {
-    auto tool_name = args.value(0);
-    set_state(workspace, Claude_state::WORKING, tool_name);
+  else {
+    set_state(workspace, Claude_state::WORKING);
   }
-  else if (event_type == "post_tool") {
-    auto current = _db.claude_status(workspace);
-    if (current && current->state == Claude_state::WORKING) {
-      // Between tool calls — still working, refresh timestamp and notify
-      auto since = _db.set_claude_state(workspace, Claude_state::WORKING, current->tool_name);
-      if (since >= 0) {
-        emit status_changed(workspace, Claude_state::WORKING, current->tool_name, {}, {}, since);
-      }
-    }
-    else {
-      set_state(workspace, Claude_state::WORKING);
-    }
+}
+
+void Claude_status_tracker::handle_stop(
+  const QString& workspace, const QStringList& /*args*/
+) {
+  set_state(workspace, Claude_state::IDLE);
+}
+
+void Claude_status_tracker::handle_notification(
+  const QString& workspace, const QStringList& args
+) {
+  auto type = from_wire_string< Claude_notification>(args.value(0));
+  if (!type) {
+    qCWarning(logClaude, "unknown notification type '%s' for workspace '%s'",
+      qPrintable(args.value(0)), qPrintable(workspace));
+    return;
   }
-  else if (event_type == "stop") {
-    set_state(workspace, Claude_state::IDLE);
-  }
-  else if (event_type == "notification") {
-    const auto& type = args.value(0);
-    if (type == "permission_prompt" || type == "elicitation_dialog") {
-      set_state(workspace, Claude_state::WAITING, {}, type, args.value(1));
-    }
-    else if (type == "idle_prompt") {
+
+  switch (*type) {
+    case Claude_notification::PERMISSION_PROMPT:
+    case Claude_notification::ELICITATION_DIALOG:
+      set_state(workspace, Claude_state::WAITING, {}, args.value(0), args.value(1));
+      break;
+    case Claude_notification::IDLE_PROMPT:
       set_state(workspace, Claude_state::IDLE);
-    }
+      break;
   }
-  else if (event_type == "session_end") {
-    auto since = _db.end_claude_session(workspace);
-    if (since >= 0) {
-      emit status_changed(workspace, Claude_state::NOT_RUNNING, {}, {}, {}, since);
-    }
+}
+
+void Claude_status_tracker::handle_session_end(
+  const QString& workspace, const QStringList& /*args*/
+) {
+  auto since = _db.end_claude_session(workspace);
+  if (since >= 0) {
+    emit status_changed(workspace, Claude_state::NOT_RUNNING, {}, {}, {}, since);
   }
 }
 

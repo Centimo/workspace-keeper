@@ -66,6 +66,10 @@ generate config/kde/workspace-menu-daemon.desktop "$HOME/.config/autostart/works
 
 chmod +x "$HOME/.local/bin/workspace"
 
+# --- Generate bash constants from C++ enums ---
+echo "Generating bash constants..."
+"$REPO_DIR/scripts/generate_constants.sh"
+
 # --- Build daemon ---
 echo "Building workspace-menu daemon..."
 

@@ -24,7 +24,11 @@ add_executable(workspace-menu
   src/workspace_manager_dbus.cpp
 )
 
-target_include_directories(workspace-menu PRIVATE ${XCB_INCLUDE_DIRS} ${SYSTEMD_INCLUDE_DIRS})
+target_include_directories(workspace-menu PRIVATE
+  ${CMAKE_CURRENT_SOURCE_DIR}/third_party
+  ${XCB_INCLUDE_DIRS}
+  ${SYSTEMD_INCLUDE_DIRS}
+)
 
 target_compile_options(workspace-menu PRIVATE -Wall -Wextra -Wpedantic)
 

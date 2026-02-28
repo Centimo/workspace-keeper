@@ -1,6 +1,8 @@
 #include "workspace_menu.h"
+#include "journal_log.h"
 #include "workspace_db.h"
 
+#include <QElapsedTimer>
 #include <QProcess>
 #include <QRegularExpression>
 
@@ -74,11 +76,17 @@ void Workspace_menu::load_data() {
 
   // Read active desktops from wmctrl -d
   QProcess wmctrl;
+  QElapsedTimer timer;
+  timer.start();
   wmctrl.start("wmctrl", {"-d"});
 
   QVector< Desktop_info> desktops;
 
   if (wmctrl.waitForFinished(2000) && wmctrl.exitCode() == 0) {
+    auto elapsed = timer.elapsed();
+    if (elapsed > 100) {
+      qCWarning(logWindow, "wmctrl -d took %lld ms (blocking event loop)", elapsed);
+    }
     auto output = QString::fromUtf8(wmctrl.readAllStandardOutput());
     auto lines = output.split('\n', Qt::SkipEmptyParts);
 
@@ -113,6 +121,10 @@ void Workspace_menu::load_data() {
     std::sort(desktops.begin(), desktops.end(), [](const auto& a, const auto& b) {
       return a.index < b.index;
     });
+  }
+  else {
+    qCWarning(logWindow, "wmctrl -d failed after %lld ms (exit=%d, state=%d)",
+      timer.elapsed(), wmctrl.exitCode(), static_cast< int>(wmctrl.state()));
   }
 
   // Sync to database
