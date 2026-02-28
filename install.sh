@@ -109,6 +109,36 @@ DISPLAY="${DISPLAY:-:0}" nohup "$HOME/.local/bin/workspace-menu" > /dev/null 2>&
 disown
 echo "  Daemon started (PID $!)"
 
+# --- Build and install QML monitor plugin ---
+echo "Building workspace monitor QML plugin..."
+
+PLUGIN_IMAGE="workspace-monitor-plugin-build"
+if ! docker image inspect "$PLUGIN_IMAGE" &>/dev/null; then
+  echo "  Building Docker image from plasmoid/plugin/Dockerfile..."
+  docker build -t "$PLUGIN_IMAGE" "$REPO_DIR/plasmoid/plugin"
+fi
+
+PLUGIN_BUILD_DIR="$REPO_DIR/plasmoid/plugin/build-install"
+mkdir -p "$PLUGIN_BUILD_DIR"
+
+docker run --rm \
+  --user "$(id -u):$(id -g)" \
+  -v /etc/passwd:/etc/passwd:ro \
+  -v /etc/group:/etc/group:ro \
+  -v "$REPO_DIR:$REPO_DIR" \
+  -w "$PLUGIN_BUILD_DIR" \
+  "$PLUGIN_IMAGE" bash -c "
+    cmake '$REPO_DIR/plasmoid/plugin' -DCMAKE_BUILD_TYPE=Release
+    make -j8
+  "
+
+QT5_QML_DIR=$(qmake -query QT_INSTALL_QML 2>/dev/null || echo "/usr/lib/x86_64-linux-gnu/qt5/qml")
+PLUGIN_INSTALL_DIR="$QT5_QML_DIR/org/workspace/monitor"
+sudo mkdir -p "$PLUGIN_INSTALL_DIR"
+sudo cp "$PLUGIN_BUILD_DIR/libworkspacemonitorplugin.so" "$PLUGIN_INSTALL_DIR/"
+sudo cp "$REPO_DIR/plasmoid/plugin/qmldir" "$PLUGIN_INSTALL_DIR/"
+echo "  Plugin installed to $PLUGIN_INSTALL_DIR"
+
 # --- Install plasmoid ---
 echo "Installing Claude Monitor plasmoid..."
 PLASMOID_DIR="$REPO_DIR/plasmoid/org.workspace.claude-monitor"
