@@ -1,5 +1,0 @@
-/workspace/projects/Multi_language_projects/workspace-keeper/plasmoid/plugin/build-install/CMakeFiles/workspacemonitorplugin.dir
-/workspace/projects/Multi_language_projects/workspace-keeper/plasmoid/plugin/build-install/CMakeFiles/edit_cache.dir
-/workspace/projects/Multi_language_projects/workspace-keeper/plasmoid/plugin/build-install/CMakeFiles/rebuild_cache.dir
-/workspace/projects/Multi_language_projects/workspace-keeper/plasmoid/plugin/build-install/CMakeFiles/workspacemonitorplugin_autogen_timestamp_deps.dir
-/workspace/projects/Multi_language_projects/workspace-keeper/plasmoid/plugin/build-install/CMakeFiles/workspacemonitorplugin_autogen.dir
