@@ -2,6 +2,7 @@ import QtQuick 2.15
 import QtQuick.Layouts 1.15
 import org.kde.plasma.plasmoid 2.0
 import org.kde.plasma.core 2.0 as PlasmaCore
+import org.workspace.monitor 1.0
 
 ColumnLayout {
   id: root
@@ -20,6 +21,12 @@ ColumnLayout {
     ? workspaces.length * (cellSize + spacing) - spacing
     : cellSize
   Layout.minimumHeight: cellSize
+
+  WorkspaceMonitor {
+    id: monitor
+    onDesktopsChanged: root.workspaces = monitor.desktops.map(function(d) { return d.name; })
+    onClaudeStatusesChanged: root.claudeStatuses = monitor.claudeStatuses
+  }
 
   Repeater {
     model: root.workspaces
@@ -53,96 +60,13 @@ ColumnLayout {
         anchors.fill: parent
         hoverEnabled: true
         cursorShape: Qt.PointingHandCursor
-        onClicked: switchToDesktop(btn.index)
+        onClicked: monitor.switchToDesktop(btn.index)
       }
 
       PlasmaCore.ToolTipArea {
         anchors.fill: parent
         mainText: btn.workspaceName
         subText: tooltipText(btn.status)
-      }
-    }
-  }
-
-  // === Data sources ===
-
-  PlasmaCore.DataSource {
-    id: wmctrlSource
-    engine: "executable"
-    connectedSources: []
-    interval: 0
-    onNewData: {
-      root.wmctrlPending = false;
-      var stdout = data.stdout;
-      disconnectSource(sourceName);
-      if (!stdout) return;
-      var desktops = [];
-      var lines = stdout.trim().split("\n");
-      for (var i = 0; i < lines.length; i++) {
-        var name = lines[i].trim();
-        if (name.length > 0) desktops.push(name);
-      }
-      if (desktops.length > 0) root.workspaces = desktops;
-    }
-  }
-
-  PlasmaCore.DataSource {
-    id: claudeSource
-    engine: "executable"
-    connectedSources: []
-    interval: 0
-    onNewData: {
-      root.claudePending = false;
-      var stdout = data.stdout;
-      disconnectSource(sourceName);
-      if (!stdout) return;
-      try {
-        var parsed = JSON.parse(stdout.trim());
-        var map = {};
-        for (var i = 0; i < parsed.length; i++) map[parsed[i].name] = parsed[i];
-        root.claudeStatuses = map;
-      }
-      catch (e) {
-        console.warn("Claude status parse error: " + e.message);
-      }
-    }
-  }
-
-  PlasmaCore.DataSource {
-    id: wmctrlSwitch
-    engine: "executable"
-    connectedSources: []
-    interval: 0
-    onNewData: { disconnectSource(sourceName); }
-  }
-
-  // Desktop name extraction uses the same algorithm as bin/workspace:
-  // find the geometry field (NxN pattern) and take everything after it.
-  readonly property string wmctrlCommand:
-    "wmctrl -d 2>/dev/null | awk '{ for(i=NF;i>0;i--) if($i~/^[0-9]+x[0-9]+$/) break; r=\"\"; for(j=i+1;j<=NF;j++) r=r (j>i+1?\" \":\"\" ) $j; print r }'"
-
-  readonly property string claudeCommand:
-    "qdbus org.workspace.StatusMonitor /StatusMonitor org.workspace.StatusMonitor.GetAllStatuses 2>/dev/null || echo '[]'"
-
-  property bool wmctrlPending: false
-  property bool claudePending: false
-
-  Timer {
-    interval: 5000; running: true; repeat: true; triggeredOnStart: true
-    onTriggered: {
-      if (!root.wmctrlPending) {
-        root.wmctrlPending = true;
-        wmctrlSource.connectSource(root.wmctrlCommand);
-      }
-    }
-  }
-
-  Timer {
-    interval: 2000; running: true; repeat: true; triggeredOnStart: true
-    onTriggered: {
-      if (!root.claudePending) {
-        root.claudePending = true;
-        claudeSource.connectSource(root.claudeCommand);
       }
     }
   }
@@ -188,9 +112,5 @@ ColumnLayout {
       else text += "\nDuration: " + Math.floor(elapsed / 60) + "m " + (elapsed % 60) + "s";
     }
     return text;
-  }
-
-  function switchToDesktop(desktopIndex) {
-    wmctrlSwitch.connectSource("wmctrl -s " + desktopIndex);
   }
 }
