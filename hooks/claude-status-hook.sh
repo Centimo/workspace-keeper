@@ -65,6 +65,9 @@ case "$hook_event_name" in
         ;;
     esac
     ;;
+  UserPromptSubmit)
+    event_type="$CLAUDE_EVENT_PROMPT_SUBMIT"
+    ;;
   SessionStart)
     event_type="$CLAUDE_EVENT_SESSION_START"
     args_tsv="${session_id:-unknown}"

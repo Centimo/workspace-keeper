@@ -28,7 +28,10 @@ Workspace_manager_dbus::Workspace_manager_dbus(
   if (!bus.registerService("org.workspace.Manager")) {
     qCWarning(logServer, "failed to register org.workspace.Manager D-Bus service: %s",
       qPrintable(bus.lastError().message()));
+    return;
   }
+
+  qCInfo(logServer, "D-Bus service org.workspace.Manager registered");
 }
 
 void Workspace_manager_dbus::CreateWorkspace(const QString& name, const QString& project_dir) {
