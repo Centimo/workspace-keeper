@@ -75,6 +75,9 @@ Global_shortcut::Global_shortcut(
     this,
     SLOT(on_shortcut_pressed(QString, QString, qlonglong))
   );
+
+  qCInfo(logShortcut, "registered '%s' (%s)",
+    qPrintable(action_name), qPrintable(shortcut.toString()));
 }
 
 void Global_shortcut::on_shortcut_pressed(

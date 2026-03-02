@@ -9,7 +9,18 @@
 
 #include <QApplication>
 #include <QDir>
+#include <QSocketNotifier>
 #include <QStandardPaths>
+
+#include <csignal>
+#include <unistd.h>
+
+static int signal_pipe[2];
+
+static void signal_handler(int) {
+  char byte = 1;
+  write(signal_pipe[1], &byte, 1);
+}
 
 int main(int argc, char* argv[]) {
   install_journal_handler();
@@ -17,6 +28,14 @@ int main(int argc, char* argv[]) {
   QApplication app(argc, argv);
   app.setApplicationName("workspace-menu");
   app.setQuitOnLastWindowClosed(false);
+
+  qCInfo(logServer, "starting (pid=%d, built " __DATE__ " " __TIME__ ")", static_cast< int>(getpid()));
+
+  pipe(signal_pipe);
+  auto* signal_notifier = new QSocketNotifier(signal_pipe[0], QSocketNotifier::Read, &app);
+  QObject::connect(signal_notifier, &QSocketNotifier::activated, &app, &QCoreApplication::quit);
+  std::signal(SIGTERM, signal_handler);
+  std::signal(SIGINT, signal_handler);
 
   auto data_dir = QStandardPaths::writableLocation(QStandardPaths::GenericDataLocation)
     + "/workspace-menu";
@@ -54,5 +73,7 @@ int main(int argc, char* argv[]) {
   QObject::connect(&shortcut, &Global_shortcut::triggered,
     &server, &Daemon_server::trigger_from_shortcut);
 
-  return app.exec();
+  auto exit_code = app.exec();
+  qCInfo(logServer, "shutting down (exit_code=%d)", exit_code);
+  return exit_code;
 }

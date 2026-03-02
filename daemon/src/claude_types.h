@@ -6,6 +6,7 @@
 enum class Claude_state {
   NOT_RUNNING,  ///< No active Claude session
   IDLE,         ///< Session active but not executing tools
+  REQUESTING,   ///< User prompt submitted, waiting for first tool call
   WORKING,      ///< Executing a tool call
   WAITING       ///< Blocked on user input (permission prompt or elicitation dialog)
 };
@@ -13,6 +14,7 @@ enum class Claude_state {
 /// Event types received from hook scripts.
 enum class Claude_event {
   SESSION_START,
+  PROMPT_SUBMIT,
   WORKING,
   POST_TOOL,
   STOP,

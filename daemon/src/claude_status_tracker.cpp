@@ -21,6 +21,8 @@ void Claude_status_tracker::process_event(
   const QString& event_type,
   const QStringList& args
 ) {
+  qCInfo(logClaude, "'%s' event=%s", qPrintable(workspace), qPrintable(event_type));
+
   auto event = from_wire_string< Claude_event>(event_type);
   if (!event) {
     qCWarning(logClaude, "unknown event type '%s' for workspace '%s'",
@@ -29,12 +31,13 @@ void Claude_status_tracker::process_event(
   }
 
   switch (*event) {
-    case Claude_event::SESSION_START: handle_session_start(workspace, args); break;
-    case Claude_event::WORKING:       handle_working(workspace, args);       break;
-    case Claude_event::POST_TOOL:     handle_post_tool(workspace, args);     break;
-    case Claude_event::STOP:          handle_stop(workspace, args);          break;
-    case Claude_event::NOTIFICATION:  handle_notification(workspace, args);  break;
-    case Claude_event::SESSION_END:   handle_session_end(workspace, args);   break;
+    case Claude_event::SESSION_START:  handle_session_start(workspace, args);  break;
+    case Claude_event::PROMPT_SUBMIT:  handle_prompt_submit(workspace, args);  break;
+    case Claude_event::WORKING:        handle_working(workspace, args);        break;
+    case Claude_event::POST_TOOL:      handle_post_tool(workspace, args);      break;
+    case Claude_event::STOP:           handle_stop(workspace, args);           break;
+    case Claude_event::NOTIFICATION:   handle_notification(workspace, args);   break;
+    case Claude_event::SESSION_END:    handle_session_end(workspace, args);    break;
   }
 }
 
@@ -45,6 +48,12 @@ void Claude_status_tracker::handle_session_start(
   if (since >= 0) {
     emit status_changed(workspace, Claude_state::IDLE, {}, {}, {}, since);
   }
+}
+
+void Claude_status_tracker::handle_prompt_submit(
+  const QString& workspace, const QStringList& /*args*/
+) {
+  set_state(workspace, Claude_state::REQUESTING);
 }
 
 void Claude_status_tracker::handle_working(
@@ -128,6 +137,15 @@ void Claude_status_tracker::set_state(
   if (since < 0) {
     return;
   }
+
+  if (!tool_name.isEmpty()) {
+    qCInfo(logClaude, "'%s' -> %s [tool=%s]",
+      qPrintable(workspace), qPrintable(to_wire_string(state)), qPrintable(tool_name));
+  }
+  else {
+    qCInfo(logClaude, "'%s' -> %s", qPrintable(workspace), qPrintable(to_wire_string(state)));
+  }
+
   emit status_changed(workspace, state, tool_name, wait_reason, wait_message, since);
 }
 
@@ -137,11 +155,12 @@ void Claude_status_tracker::check_timeouts() {
 
   auto statuses = _db.all_claude_statuses();
   for (const auto& status : statuses) {
-    if (status.state == Claude_state::WORKING
+    if ((status.state == Claude_state::WORKING || status.state == Claude_state::REQUESTING)
       && (now - status.state_since_ms) > timeout_ms
     ) {
-      qCWarning(logClaude, "workspace '%s' WORKING timeout (%" PRId64 " min), resetting to IDLE",
+      qCWarning(logClaude, "workspace '%s' %s timeout (%" PRId64 " min), resetting to IDLE",
         qPrintable(status.workspace_name),
+        qPrintable(to_wire_string(status.state)),
         static_cast< int64_t>(std::chrono::duration_cast< std::chrono::minutes>(_working_timeout).count()));
       set_state(status.workspace_name, Claude_state::IDLE);
     }

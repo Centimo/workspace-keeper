@@ -75,28 +75,31 @@ ColumnLayout {
 
   function stateColor(state) {
     switch (state) {
-      case "working": return "#1d5fa0";
-      case "waiting": return "#b08020";
-      case "idle":    return "#555555";
-      default:        return "#3a3a3a";
+      case "requesting": return "#1d5fa0";
+      case "working":    return "#2d8a4e";
+      case "waiting":    return "#b08020";
+      case "idle":       return "#555555";
+      default:           return "#3a3a3a";
     }
   }
 
   function stateTextColor(state) {
     switch (state) {
-      case "working": return "#ffffff";
-      case "waiting": return "#ffffff";
-      case "idle":    return "#aaaaaa";
-      default:        return "#666666";
+      case "requesting": return "#ffffff";
+      case "working":    return "#ffffff";
+      case "waiting":    return "#ffffff";
+      case "idle":       return "#aaaaaa";
+      default:           return "#666666";
     }
   }
 
   function stateLabel(state) {
     switch (state) {
-      case "working": return "W";
-      case "waiting": return "?";
-      case "idle":    return "_";
-      default:        return "-";
+      case "requesting": return "R";
+      case "working":    return "W";
+      case "waiting":    return "?";
+      case "idle":       return "_";
+      default:           return "-";
     }
   }
 

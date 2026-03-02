@@ -29,7 +29,10 @@ Claude_status_dbus::Claude_status_dbus(Claude_status_tracker& tracker)
   if (!bus.registerService("org.workspace.StatusMonitor")) {
     qCWarning(logClaude, "failed to register D-Bus service: %s",
       qPrintable(bus.lastError().message()));
+    return;
   }
+
+  qCInfo(logClaude, "D-Bus service org.workspace.StatusMonitor registered");
 }
 
 QString Claude_status_dbus::GetAllStatuses() {
