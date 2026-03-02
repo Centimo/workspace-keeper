@@ -301,11 +301,11 @@ wait_for_new_window() {
 
 cmd_create() {
   local project_dir="${1:?Usage: workspace create <path> [name]}"
-  project_dir="$(realpath "$project_dir")"
+  project_dir="$(realpath -m "$project_dir")"
 
   if [[ ! -d "$project_dir" ]]; then
-    echo "Error: directory '$project_dir' does not exist" >&2
-    exit 1
+    log "directory '$project_dir' does not exist, creating"
+    mkdir -p "$project_dir"
   fi
 
   local ws_name="${2:-$(basename "$project_dir")}"
@@ -661,11 +661,11 @@ cmd_handle_response() {
       elif [[ -n "$ws_name" ]] && [[ -n "$ws_project_dir" ]]; then
         # Saved workspace — activate it
         cmd_create "$ws_project_dir" "$ws_name"
-      elif [[ -d "${selected%/}" ]]; then
-        # Directory path — create new workspace
+      elif [[ "$selected" == /* ]]; then
+        # Directory path — create new workspace (mkdir -p in cmd_create)
         cmd_create "${selected%/}"
       else
-        echo "Error: '$selected' is neither a known workspace nor an existing directory" >&2
+        echo "Error: '$selected' is not a known workspace or a path" >&2
         return 1
       fi
       ;;
