@@ -22,6 +22,8 @@ add_executable(workspace-menu
   src/claude_status_dbus.cpp
   src/workspace_db.cpp
   src/workspace_manager_dbus.cpp
+  src/desktop_monitor.cpp
+  src/status_overlay.cpp
 )
 
 target_include_directories(workspace-menu PRIVATE

@@ -1,0 +1,34 @@
+#pragma once
+
+#include <QDBusPendingCallWatcher>
+#include <QObject>
+#include <QVariantList>
+
+class QDBusMessage;
+
+/// Monitors KWin virtual desktops via D-Bus signals (push model).
+/// Provides desktop list sorted by position and desktop switching.
+class Desktop_monitor : public QObject {
+  Q_OBJECT
+
+ public:
+  explicit Desktop_monitor(QObject* parent = nullptr);
+
+  const QVariantList& desktops() const { return _desktops; }
+
+  void switch_to_desktop(int index);
+
+ signals:
+  void desktops_changed();
+
+ private slots:
+  void on_desktop_created(const QDBusMessage& message);
+  void on_desktop_removed(const QDBusMessage& message);
+  void on_desktop_data_changed(const QDBusMessage& message);
+  void on_desktops_fetched(QDBusPendingCallWatcher* watcher);
+
+ private:
+  void fetch_desktops();
+
+  QVariantList _desktops;
+};

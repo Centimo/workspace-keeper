@@ -81,6 +81,11 @@ class Workspace_db {
   QVector< Claude_workspace_status> all_claude_statuses() const;
   std::optional< Claude_workspace_status> claude_status(const QString& workspace) const;
 
+  // --- Meta ---
+
+  QString get_meta(const QString& key) const;
+  void set_meta(const QString& key, const QString& value);
+
   // --- Migration ---
 
   /// One-time migration: import workspaces from config directory files into DB.

@@ -475,6 +475,31 @@ std::optional< Claude_workspace_status> Workspace_db::claude_status(const QStrin
   return std::nullopt;
 }
 
+// --- Meta ---
+
+QString Workspace_db::get_meta(const QString& key) const {
+  QSqlQuery query(_db);
+  query.prepare("SELECT value FROM meta WHERE key = ?");
+  query.addBindValue(key);
+
+  if (query.exec() && query.next()) {
+    return query.value(0).toString();
+  }
+  return {};
+}
+
+void Workspace_db::set_meta(const QString& key, const QString& value) {
+  QSqlQuery query(_db);
+  query.prepare("INSERT OR REPLACE INTO meta (key, value) VALUES (?, ?)");
+  query.addBindValue(key);
+  query.addBindValue(value);
+
+  if (!query.exec()) {
+    qCWarning(logServer, "set_meta: failed for key '%s': %s",
+      qPrintable(key), qPrintable(query.lastError().text()));
+  }
+}
+
 // --- Migration ---
 
 void Workspace_db::migrate_from_config_dir(const QString& config_dir) {
