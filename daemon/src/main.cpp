@@ -1,9 +1,11 @@
 #include "claude_status_dbus.h"
 #include "claude_status_tracker.h"
 #include "daemon_server.h"
+#include "desktop_monitor.h"
 #include "global_shortcut.h"
 #include "journal_log.h"
 #include "menu_window.h"
+#include "status_overlay.h"
 #include "workspace_db.h"
 #include "workspace_manager_dbus.h"
 
@@ -59,6 +61,21 @@ int main(int argc, char* argv[]) {
   // Needs a stable QObject as parent for D-Bus object registration.
   QObject manager_host;
   new Workspace_manager_dbus(db, claude_tracker, &manager_host);
+
+  Desktop_monitor desktop_monitor;
+  Status_overlay overlay(desktop_monitor, db);
+
+  QObject::connect(&claude_tracker, &Claude_status_tracker::status_changed,
+    &overlay, &Status_overlay::on_status_changed);
+
+  // Load initial claude statuses into overlay
+  for (const auto& status : claude_tracker.all_statuses()) {
+    overlay.on_status_changed(
+      status.workspace_name, status.state,
+      status.tool_name, status.wait_reason, status.wait_message,
+      status.state_since_ms
+    );
+  }
 
   Daemon_server server(window);
   if (!server.start()) {
