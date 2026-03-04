@@ -12,13 +12,13 @@
 
 namespace {
 
-/// Parse KWin VirtualDesktop struct (id: string, name: string, position: uint) from QDBusArgument.
+/// Parse KWin VirtualDesktop struct (position: uint, id: string, name: string) from QDBusArgument.
 QVariantMap parse_desktop(const QDBusArgument& argument) {
+  uint position = 0;
   QString id;
   QString name;
-  uint position = 0;
   argument.beginStructure();
-  argument >> id >> name >> position;
+  argument >> position >> id >> name;
   argument.endStructure();
   return {{"id", id}, {"name", name}, {"position", position}};
 }
