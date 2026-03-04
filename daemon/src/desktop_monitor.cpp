@@ -10,13 +10,13 @@
 
 namespace {
 
-/// Parse KWin VirtualDesktop struct (id: string, name: string, position: uint).
+/// Parse KWin VirtualDesktop struct (position: uint, id: string, name: string).
 QVariantMap parse_desktop(const QDBusArgument& argument) {
+  uint position = 0;
   QString id;
   QString name;
-  uint position = 0;
   argument.beginStructure();
-  argument >> id >> name >> position;
+  argument >> position >> id >> name;
   argument.endStructure();
   return {{"id", id}, {"name", name}, {"position", position}};
 }
@@ -109,11 +109,15 @@ void Desktop_monitor::fetch_desktops() {
 void Desktop_monitor::on_desktops_fetched(QDBusPendingCallWatcher* watcher) {
   watcher->deleteLater();
   QDBusPendingReply< QDBusVariant> reply = *watcher;
-  if (reply.isError())
+  if (reply.isError()) {
+    qCWarning(logServer, "Desktop_monitor: fetch desktops failed: %s",
+      qPrintable(reply.error().message()));
     return;
+  }
 
   auto argument = reply.value().variant().value< QDBusArgument>();
   _desktops = parse_desktops(argument);
   sort_by_position(_desktops);
+  qCInfo(logServer, "Desktop_monitor: fetched %d desktops", static_cast< int>(_desktops.size()));
   emit desktops_changed();
 }
