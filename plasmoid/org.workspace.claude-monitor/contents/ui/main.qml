@@ -13,9 +13,9 @@ ColumnLayout {
 
   property var workspaces: []
   property var claudeStatuses: ({})
-  property int cellSize: PlasmaCore.Units.iconSizes.small
+  property int cellSize: width > 0 ? width : PlasmaCore.Units.iconSizes.small
 
-  Layout.preferredWidth: cellSize
+  Layout.fillWidth: true
   Layout.minimumWidth: cellSize
   Layout.preferredHeight: workspaces.length > 0
     ? workspaces.length * (cellSize + spacing) - spacing
@@ -40,8 +40,8 @@ ColumnLayout {
       property var status: root.claudeStatuses[workspaceName] || null
       property string state: status ? status.state : "not_running"
 
-      Layout.preferredWidth: root.cellSize
-      Layout.preferredHeight: root.cellSize
+      Layout.fillWidth: true
+      Layout.preferredHeight: width
       radius: 3
       color: stateColor(state)
       border.color: Qt.lighter(color, 1.3)
