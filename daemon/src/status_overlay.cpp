@@ -113,6 +113,7 @@ Status_overlay::Status_overlay(
   );
   setAttribute(Qt::WA_TranslucentBackground);
   setAttribute(Qt::WA_ShowWithoutActivating);
+  setMouseTracking(true);
 
   connect(
     &_desktop_monitor, &Desktop_monitor::desktops_changed,
@@ -158,8 +159,7 @@ void Status_overlay::toggle_edit_mode() {
   _edit_mode = !_edit_mode;
 
   if (_edit_mode) {
-    // Allow free resizing
-    setMinimumSize(size_for_columns(1));
+    setMinimumSize(_cell_size + 2 * _padding, _cell_size + 2 * _padding);
     setMaximumSize(QWIDGETSIZE_MAX, QWIDGETSIZE_MAX);
   }
   else {
@@ -168,6 +168,7 @@ void Status_overlay::toggle_edit_mode() {
     auto target = size_for_columns(_columns);
     setFixedSize(target);
     save_geometry();
+    unsetCursor();
   }
 
   update();
@@ -196,8 +197,6 @@ void Status_overlay::update_cells() {
 }
 
 void Status_overlay::apply_x11_sticky() {
-  // KWin uses WM_NAME as caption; for Qt::Tool windows without explicit title,
-  // this defaults to QApplication::applicationName().
   kwin_set_on_all_desktops(QCoreApplication::applicationName());
 }
 
@@ -302,23 +301,22 @@ QString Status_overlay::tooltip_text(const Cell_info& cell) const {
   return text;
 }
 
-Status_overlay::Resize_edge Status_overlay::edge_at(const QPoint& pos) const {
-  bool at_right = pos.x() >= width() - _edge_margin;
-  bool at_bottom = pos.y() >= height() - _edge_margin;
-
-  if (at_right && at_bottom) return Resize_edge::BOTTOM_RIGHT;
-  if (at_right) return Resize_edge::RIGHT;
-  if (at_bottom) return Resize_edge::BOTTOM;
-  return Resize_edge::NONE;
+unsigned Status_overlay::edges_at(const QPoint& pos) const {
+  unsigned edges = EDGE_NONE;
+  if (pos.x() < _edge_margin)              edges |= EDGE_LEFT;
+  if (pos.x() >= width() - _edge_margin)   edges |= EDGE_RIGHT;
+  if (pos.y() < _edge_margin)              edges |= EDGE_TOP;
+  if (pos.y() >= height() - _edge_margin)  edges |= EDGE_BOTTOM;
+  return edges;
 }
 
-Qt::CursorShape Status_overlay::cursor_for_edge(Resize_edge edge) const {
-  switch (edge) {
-    case Resize_edge::RIGHT:        return Qt::SizeHorCursor;
-    case Resize_edge::BOTTOM:       return Qt::SizeVerCursor;
-    case Resize_edge::BOTTOM_RIGHT: return Qt::SizeFDiagCursor;
-    case Resize_edge::NONE:         return Qt::ArrowCursor;
-  }
+Qt::CursorShape Status_overlay::cursor_for_edges(unsigned edges) const {
+  if ((edges & (EDGE_TOP | EDGE_LEFT)) == (EDGE_TOP | EDGE_LEFT))       return Qt::SizeFDiagCursor;
+  if ((edges & (EDGE_BOTTOM | EDGE_RIGHT)) == (EDGE_BOTTOM | EDGE_RIGHT)) return Qt::SizeFDiagCursor;
+  if ((edges & (EDGE_TOP | EDGE_RIGHT)) == (EDGE_TOP | EDGE_RIGHT))     return Qt::SizeBDiagCursor;
+  if ((edges & (EDGE_BOTTOM | EDGE_LEFT)) == (EDGE_BOTTOM | EDGE_LEFT)) return Qt::SizeBDiagCursor;
+  if (edges & (EDGE_LEFT | EDGE_RIGHT))  return Qt::SizeHorCursor;
+  if (edges & (EDGE_TOP | EDGE_BOTTOM))  return Qt::SizeVerCursor;
   return Qt::ArrowCursor;
 }
 
@@ -397,12 +395,12 @@ void Status_overlay::mousePressEvent(QMouseEvent* event) {
     return;
 
   if (_edit_mode) {
-    auto edge = edge_at(event->pos());
-    if (edge != Resize_edge::NONE) {
+    auto edges = edges_at(event->pos());
+    if (edges != EDGE_NONE) {
       _resizing = true;
-      _resize_edge = edge;
+      _resize_edges = edges;
       _resize_origin = event->globalPosition().toPoint();
-      _resize_start_size = size();
+      _resize_start_geometry = geometry();
     }
     else {
       _dragging = true;
@@ -420,15 +418,21 @@ void Status_overlay::mouseMoveEvent(QMouseEvent* event) {
   if (_edit_mode) {
     if (_resizing) {
       auto delta = event->globalPosition().toPoint() - _resize_origin;
-      auto new_size = _resize_start_size;
+      auto geo = _resize_start_geometry;
+      int min_w = _cell_size + 2 * _padding;
+      int min_h = _cell_size + 2 * _padding;
 
-      if (_resize_edge == Resize_edge::RIGHT || _resize_edge == Resize_edge::BOTTOM_RIGHT)
-        new_size.setWidth(qMax(new_size.width() + delta.x(), size_for_columns(1).width()));
-      if (_resize_edge == Resize_edge::BOTTOM || _resize_edge == Resize_edge::BOTTOM_RIGHT)
-        new_size.setHeight(qMax(new_size.height() + delta.y(), _cell_size + 2 * _padding));
+      if (_resize_edges & EDGE_RIGHT)
+        geo.setRight(qMax(geo.right() + delta.x(), geo.left() + min_w - 1));
+      if (_resize_edges & EDGE_BOTTOM)
+        geo.setBottom(qMax(geo.bottom() + delta.y(), geo.top() + min_h - 1));
+      if (_resize_edges & EDGE_LEFT)
+        geo.setLeft(qMin(geo.left() + delta.x(), geo.right() - min_w + 1));
+      if (_resize_edges & EDGE_TOP)
+        geo.setTop(qMin(geo.top() + delta.y(), geo.bottom() - min_h + 1));
 
-      resize(new_size);
-      _columns = columns_for_width(new_size.width());
+      setGeometry(geo);
+      _columns = columns_for_width(geo.width());
       event->accept();
       update();
     }
@@ -437,8 +441,7 @@ void Status_overlay::mouseMoveEvent(QMouseEvent* event) {
       event->accept();
     }
     else {
-      // Update cursor for resize edges
-      setCursor(cursor_for_edge(edge_at(event->pos())));
+      setCursor(cursor_for_edges(edges_at(event->pos())));
     }
   }
 }
