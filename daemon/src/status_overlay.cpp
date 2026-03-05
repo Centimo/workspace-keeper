@@ -380,6 +380,12 @@ void Status_overlay::paintEvent(QPaintEvent*) {
 
     painter.setPen(state_text_color(_cells[i].state));
     painter.drawText(rect, Qt::AlignCenter, state_label(_cells[i].state));
+
+    if (i == _hovered_cell && !_edit_mode) {
+      painter.setBrush(Qt::NoBrush);
+      painter.setPen(QPen(QColor(255, 255, 255, 160), 2));
+      painter.drawRoundedRect(rect.adjusted(1, 1, -1, -1), 2, 2);
+    }
   }
 
   // Edit mode border
@@ -444,6 +450,13 @@ void Status_overlay::mouseMoveEvent(QMouseEvent* event) {
       setCursor(cursor_for_edges(edges_at(event->pos())));
     }
   }
+  else {
+    auto cell = cell_at(event->pos());
+    if (cell != _hovered_cell) {
+      _hovered_cell = cell;
+      update();
+    }
+  }
 }
 
 void Status_overlay::mouseReleaseEvent(QMouseEvent* event) {
@@ -470,6 +483,13 @@ void Status_overlay::mouseReleaseEvent(QMouseEvent* event) {
   }
 
   event->accept();
+}
+
+void Status_overlay::leaveEvent(QEvent*) {
+  if (_hovered_cell >= 0) {
+    _hovered_cell = -1;
+    update();
+  }
 }
 
 void Status_overlay::contextMenuEvent(QContextMenuEvent* event) {

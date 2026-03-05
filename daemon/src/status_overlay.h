@@ -44,6 +44,7 @@ class Status_overlay : public QWidget {
   void mousePressEvent(QMouseEvent* event) override;
   void mouseMoveEvent(QMouseEvent* event) override;
   void mouseReleaseEvent(QMouseEvent* event) override;
+  void leaveEvent(QEvent* event) override;
   void contextMenuEvent(QContextMenuEvent* event) override;
   bool event(QEvent* event) override;
 
@@ -101,6 +102,7 @@ class Status_overlay : public QWidget {
 
   // Click detection (normal mode)
   QPoint _press_global_pos;
+  int _hovered_cell = -1;
 
   int _columns = 1;
   static constexpr int _cell_size = 48;

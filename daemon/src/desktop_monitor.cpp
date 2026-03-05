@@ -75,9 +75,11 @@ void Desktop_monitor::switch_to_desktop(int index) {
   auto id = _desktops[index].toMap()["id"].toString();
   auto message = QDBusMessage::createMethodCall(
     "org.kde.KWin", "/VirtualDesktopManager",
-    "org.kde.KWin.VirtualDesktopManager", "setCurrentDesktop"
+    "org.freedesktop.DBus.Properties", "Set"
   );
-  message << id;
+  message << "org.kde.KWin.VirtualDesktopManager"
+          << "current"
+          << QVariant::fromValue(QDBusVariant(id));
   QDBusConnection::sessionBus().call(message, QDBus::NoBlock);
 }
 
