@@ -53,6 +53,30 @@ QString Workspace_menu::close_current() {
   return {};
 }
 
+void Workspace_menu::move_current(int direction) {
+  auto [name_a, name_b] = _model.move_selected(direction);
+  if (name_a.isEmpty()) {
+    return;
+  }
+
+  // Persist new order to database
+  _db.swap_desktop_order(name_a, name_b);
+
+  // Swap positions in _active_desktops to keep in sync
+  int idx_a = -1, idx_b = -1;
+  for (int i = 0; i < _active_desktops.size(); ++i) {
+    if (_active_desktops[i].first == name_a) {
+      idx_a = i;
+    }
+    if (_active_desktops[i].first == name_b) {
+      idx_b = i;
+    }
+  }
+  if (idx_a >= 0 && idx_b >= 0) {
+    std::swap(_active_desktops[idx_a], _active_desktops[idx_b]);
+  }
+}
+
 QString Workspace_menu::tab_complete() {
   const auto* entry = _model.selected_entry();
 

@@ -362,6 +362,9 @@ cmd_create() {
     log "desktop switch confirmed"
   fi
 
+  # Prevent Claude Code nested-session detection in spawned terminals
+  unset CLAUDECODE
+
   # --- WezTerm ---
   local before_wez
   before_wez=$(wmctrl -l | awk '{print $1}' | sort)
@@ -653,10 +656,14 @@ cmd_handle_response() {
   case "$action" in
     select|custom_input)
       if [[ -n "$ws_name" ]] && [[ -n "${active_desktops[$ws_name]+x}" ]]; then
-        # Active workspace — switch to it
-        wmctrl -s "${active_desktops[$ws_name]}"
-        if [[ -n "$restore_wid" ]]; then
-          wmctrl -i -a "$restore_wid"
+        # Active workspace — switch to it and focus WezTerm
+        local target_desktop="${active_desktops[$ws_name]}"
+        wmctrl -s "$target_desktop"
+        local wez_wid
+        wez_wid=$(wmctrl -l -x \
+          | awk -v d="$target_desktop" '$2 == d && $3 ~ /org\.wezfurlong\.wezterm/ {print $1; exit}')
+        if [[ -n "$wez_wid" ]]; then
+          wmctrl -i -a "$wez_wid"
         fi
       elif [[ -n "$ws_name" ]] && [[ -n "$ws_project_dir" ]]; then
         # Saved workspace — activate it

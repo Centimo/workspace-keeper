@@ -220,6 +220,14 @@ bool Menu_window::eventFilter(QObject* obj, QEvent* event) {
       finish_session("cancelled");
       return true;
     }
+    if (key_event->key() == Qt::Key_Up && (key_event->modifiers() & Qt::ShiftModifier)) {
+      _menu.move_current(-1);
+      return true;
+    }
+    if (key_event->key() == Qt::Key_Down && (key_event->modifiers() & Qt::ShiftModifier)) {
+      _menu.move_current(1);
+      return true;
+    }
     if (key_event->key() == Qt::Key_Up) {
       _menu.model()->navigate(-1);
       return true;

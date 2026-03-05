@@ -109,6 +109,10 @@ void Workspace_db::create_tables() {
     qCCritical(logServer, "failed to create meta table: %s",
       qPrintable(query.lastError().text()));
   }
+
+  // Migration: add sort_order column
+  query.exec("ALTER TABLE workspace ADD COLUMN sort_order INTEGER");
+  // Ignore error — column may already exist
 }
 
 void Workspace_db::ensure_workspace_exists(const QString& name) {
@@ -182,7 +186,7 @@ QJsonArray Workspace_db::all_workspaces() const {
     "SELECT w.name, w.project_dir, w.is_active,"
     "  (SELECT COUNT(*) FROM workspace_tab t WHERE t.workspace_name = w.name) AS tab_count"
     " FROM workspace w"
-    " ORDER BY w.is_active DESC, w.desktop_index, w.name"
+    " ORDER BY w.is_active DESC, COALESCE(w.sort_order, w.desktop_index), w.name"
   )) {
     while (query.next()) {
       QJsonObject obj;
@@ -227,6 +231,13 @@ void Workspace_db::sync_active_desktops(const QVector< Desktop_info>& desktops) 
     }
   }
 
+  // Initialize sort_order from desktop_index where not yet set
+  QSqlQuery init(_db);
+  if (!init.exec("UPDATE workspace SET sort_order = desktop_index WHERE is_active = 1 AND sort_order IS NULL")) {
+    qCWarning(logServer, "sync_active_desktops: sort_order init failed: %s",
+      qPrintable(init.lastError().text()));
+  }
+
   _db.commit();
 }
 
@@ -237,7 +248,7 @@ QVector< Workspace_info> Workspace_db::active_desktops() const {
   if (query.exec(
     "SELECT name, project_dir FROM workspace"
     " WHERE is_active = 1"
-    " ORDER BY desktop_index"
+    " ORDER BY COALESCE(sort_order, desktop_index)"
   )) {
     while (query.next()) {
       result.append({
@@ -247,6 +258,42 @@ QVector< Workspace_info> Workspace_db::active_desktops() const {
     }
   }
   return result;
+}
+
+void Workspace_db::swap_desktop_order(const QString& name_a, const QString& name_b) {
+  // Read both values first, then write — single UPDATE with subqueries
+  // can see partially-updated rows in SQLite.
+  QSqlQuery read_a(_db);
+  read_a.prepare("SELECT sort_order FROM workspace WHERE name = ?");
+  read_a.addBindValue(name_a);
+
+  QSqlQuery read_b(_db);
+  read_b.prepare("SELECT sort_order FROM workspace WHERE name = ?");
+  read_b.addBindValue(name_b);
+
+  if (!read_a.exec() || !read_a.next() || !read_b.exec() || !read_b.next()) {
+    qCWarning(logServer, "swap_desktop_order: failed to read for '%s' <-> '%s'",
+      qPrintable(name_a), qPrintable(name_b));
+    return;
+  }
+
+  auto order_a = read_a.value(0);
+  auto order_b = read_b.value(0);
+
+  QSqlQuery write_a(_db);
+  write_a.prepare("UPDATE workspace SET sort_order = ? WHERE name = ?");
+  write_a.addBindValue(order_b);
+  write_a.addBindValue(name_a);
+
+  QSqlQuery write_b(_db);
+  write_b.prepare("UPDATE workspace SET sort_order = ? WHERE name = ?");
+  write_b.addBindValue(order_a);
+  write_b.addBindValue(name_b);
+
+  if (!write_a.exec() || !write_b.exec()) {
+    qCWarning(logServer, "swap_desktop_order: failed to write for '%s' <-> '%s'",
+      qPrintable(name_a), qPrintable(name_b));
+  }
 }
 
 QVector< Workspace_info> Workspace_db::saved_workspaces() const {

@@ -28,6 +28,7 @@ class Workspace_menu : public QObject {
   Q_INVOKABLE QString select_current();
   /// @return response string ("close <data>"), empty if not a workspace
   Q_INVOKABLE QString close_current();
+  void move_current(int direction);
   Q_INVOKABLE QString tab_complete();
 
  signals:
