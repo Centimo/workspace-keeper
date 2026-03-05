@@ -153,6 +153,68 @@ void Workspace_model::rebuild(
   emit selected_index_changed();
 }
 
+QPair< QString, QString> Workspace_model::move_selected(int direction) {
+  if (_selected_index < 0 || _selected_index >= _entries.size()) {
+    return {};
+  }
+
+  const auto& selected = _entries[_selected_index];
+  if (selected.type != Entry_type::WORKSPACE || !selected.is_active) {
+    return {};
+  }
+
+  // Find active section boundaries (entries between "active" header and next header or end)
+  int active_start = -1;
+  int active_end = _entries.size();
+  for (int i = 0; i < _entries.size(); ++i) {
+    if (_entries[i].type == Entry_type::SECTION_HEADER && _entries[i].display_text == "active") {
+      active_start = i + 1;
+    }
+    else if (_entries[i].type == Entry_type::SECTION_HEADER && active_start >= 0) {
+      active_end = i;
+      break;
+    }
+  }
+
+  if (active_start < 0) {
+    return {};
+  }
+
+  // Collect indices of active workspace entries (skip headers)
+  QVector< int> active_indices;
+  for (int i = active_start; i < active_end; ++i) {
+    if (_entries[i].type == Entry_type::WORKSPACE) {
+      active_indices.append(i);
+    }
+  }
+
+  if (active_indices.size() < 2) {
+    return {};
+  }
+
+  // Find position of selected in active_indices
+  int pos = active_indices.indexOf(_selected_index);
+  if (pos < 0) {
+    return {};
+  }
+
+  // Cyclic target
+  int target_pos = (pos + direction + active_indices.size()) % active_indices.size();
+  int target_index = active_indices[target_pos];
+
+  auto name_a = _entries[_selected_index].name;
+  auto name_b = _entries[target_index].name;
+
+  beginResetModel();
+  std::swap(_entries[_selected_index], _entries[target_index]);
+  _selected_index = target_index;
+  endResetModel();
+  // selected_index_changed not emitted separately —
+  // endResetModel triggers rebuild_list which calls update_selection
+
+  return {name_a, name_b};
+}
+
 void Workspace_model::navigate(int direction) {
   if (_entries.isEmpty()) {
     return;

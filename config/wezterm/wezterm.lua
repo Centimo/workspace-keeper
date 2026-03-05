@@ -135,11 +135,20 @@ config.keys = {
 
   -- Alt = terminal signals
   { key = 'c', mods = 'ALT', action = wezterm.action.SendKey { key = 'c', mods = 'CTRL' } },  -- SIGINT
+  { key = 'C', mods = 'ALT', action = wezterm.action.SendKey { key = 'c', mods = 'CTRL' } },  -- SIGINT (Caps Lock)
   { key = 'z', mods = 'ALT', action = wezterm.action.SendKey { key = 'z', mods = 'CTRL' } },  -- SIGTSTP
+  { key = 'Z', mods = 'ALT', action = wezterm.action.SendKey { key = 'z', mods = 'CTRL' } },  -- SIGTSTP (Caps Lock)
   { key = 'd', mods = 'ALT', action = wezterm.action.SendKey { key = 'd', mods = 'CTRL' } },  -- EOF
+  { key = 'D', mods = 'ALT', action = wezterm.action.SendKey { key = 'd', mods = 'CTRL' } },  -- EOF (Caps Lock)
 
   -- Disable Alt+Enter fullscreen toggle
   { key = 'Enter', mods = 'ALT', action = wezterm.action.DisableDefaultAssignment },
 }
+
+-- Open URLs via xdg-open from GUI process (mux-server may lack desktop environment)
+wezterm.on('open-uri', function(window, pane, uri)
+  wezterm.background_child_process({ 'xdg-open', uri })
+  return false
+end)
 
 return config

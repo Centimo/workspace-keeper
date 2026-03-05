@@ -1,6 +1,7 @@
 #pragma once
 
 #include <QAbstractListModel>
+#include <QPair>
 #include <QString>
 #include <QVector>
 
@@ -46,11 +47,15 @@ class Workspace_model : public QAbstractListModel {
 
   Q_INVOKABLE void navigate(int direction);
 
+  /// Swap selected active workspace with next active in given direction (cyclic within active section).
+  /// @return pair of (name_a, name_b) if swap happened, empty pair otherwise
+  QPair< QString, QString> move_selected(int direction);
+
   int selected_index() const;
 
   const Entry* selected_entry() const;
 
-  static QString compute_tab_completion(const QString& input);
+static QString compute_tab_completion(const QString& input);
 
  signals:
   void selected_index_changed();
@@ -60,4 +65,4 @@ class Workspace_model : public QAbstractListModel {
 
   QVector< Entry> _entries;
   int _selected_index = -1;
-};
+}     ;

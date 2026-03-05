@@ -56,6 +56,9 @@ class Workspace_db {
   QVector< Workspace_info> active_desktops() const;
   QVector< Workspace_info> saved_workspaces() const;
 
+  /// Swap desktop_index values for two active workspaces.
+  void swap_desktop_order(const QString& name_a, const QString& name_b);
+
   // --- Tabs ---
 
   void set_tabs(const QString& workspace_name, const QStringList& urls);
