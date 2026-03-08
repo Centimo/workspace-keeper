@@ -296,6 +296,22 @@ void Workspace_db::swap_desktop_order(const QString& name_a, const QString& name
   }
 }
 
+QString Workspace_db::active_desktop_name_at(int position) const {
+  QSqlQuery query(_db);
+  query.prepare(
+    "SELECT name FROM workspace"
+    " WHERE is_active = 1"
+    " ORDER BY COALESCE(sort_order, desktop_index)"
+    " LIMIT 1 OFFSET ?"
+  );
+  query.addBindValue(position);
+
+  if (query.exec() && query.next()) {
+    return query.value(0).toString();
+  }
+  return {};
+}
+
 QVector< Workspace_info> Workspace_db::saved_workspaces() const {
   QVector< Workspace_info> result;
   QSqlQuery query(_db);

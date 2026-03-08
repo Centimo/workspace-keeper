@@ -59,6 +59,10 @@ class Workspace_db {
   /// Swap desktop_index values for two active workspaces.
   void swap_desktop_order(const QString& name_a, const QString& name_b);
 
+  /// @return name of the active desktop at given position in the internal
+  /// sorted order (0-based). Empty string if position is out of range.
+  QString active_desktop_name_at(int position) const;
+
   // --- Tabs ---
 
   void set_tabs(const QString& workspace_name, const QStringList& urls);

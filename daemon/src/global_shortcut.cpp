@@ -67,8 +67,9 @@ void Global_shortcut::register_shortcut() {
     return;
   }
 
-  // SetPresent=2 marks the shortcut as active
-  auto set_reply = iface.call("setShortcut", action_id, QVariant::fromValue(keys), 2u);
+  // SetPresent=2 marks the shortcut as active, NoAutoloading=4 forces our keys
+  // even if kglobalaccel has a previously saved (possibly empty) binding.
+  auto set_reply = iface.call("setShortcut", action_id, QVariant::fromValue(keys), 6u);
   if (set_reply.type() == QDBusMessage::ErrorMessage) {
     qCWarning(logShortcut, "setShortcut failed for '%s': %s",
       qPrintable(_action_name), qPrintable(set_reply.errorMessage()));

@@ -14,6 +14,8 @@
 #include <QSocketNotifier>
 #include <QStandardPaths>
 
+#include <QProcess>
+
 #include <csignal>
 #include <unistd.h>
 
@@ -89,6 +91,31 @@ int main(int argc, char* argv[]) {
   );
   QObject::connect(&shortcut, &Global_shortcut::triggered,
     &server, &Daemon_server::trigger_from_shortcut);
+
+  const QString workspace_bin = QDir::homePath() + "/.local/bin/workspace";
+
+  constexpr int desktop_shortcut_count = 8;
+  for (int i = 0; i < desktop_shortcut_count; ++i) {
+    auto* sc = new Global_shortcut(
+      QString("switch-desktop-%1").arg(i + 1),
+      QString("Switch to Desktop %1").arg(i + 1),
+      Qt::ALT | static_cast< Qt::Key>(Qt::Key_F1 + i),
+      &app
+    );
+
+    QObject::connect(sc, &Global_shortcut::triggered, &app, [&db, &workspace_bin, i]() {
+      auto name = db.active_desktop_name_at(i);
+      if (name.isEmpty()) {
+        qCInfo(logShortcut, "Alt+F%d: no active desktop at position %d", i + 1, i);
+        return;
+      }
+
+      qCInfo(logShortcut, "Alt+F%d: switching to '%s'", i + 1, qPrintable(name));
+      if (!QProcess::startDetached(workspace_bin, {"handle-response", "select " + name})) {
+        qCWarning(logShortcut, "Alt+F%d: failed to start '%s'", i + 1, qPrintable(workspace_bin));
+      }
+    });
+  }
 
   auto exit_code = app.exec();
   qCInfo(logServer, "shutting down (exit_code=%d)", exit_code);
