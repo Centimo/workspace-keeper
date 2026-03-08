@@ -94,7 +94,7 @@ void Daemon_server::on_session_finished(const QString& response) {
       && !response.startsWith("error"))
     {
       auto* process = new QProcess(this);
-      connect(process, &QProcess::finished, this,
+      connect(process, QOverload<int, QProcess::ExitStatus>::of(&QProcess::finished), this,
         [process](int exit_code, QProcess::ExitStatus status) {
           if (exit_code != 0 || status != QProcess::NormalExit) {
             qCWarning(logServer, "handle-response: exit code %d, stderr: %s",

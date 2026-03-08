@@ -248,7 +248,7 @@ bool Menu_window::eventFilter(QObject* obj, QEvent* event) {
 }
 
 bool Menu_window::nativeEventFilter(
-  const QByteArray& event_type, void* message, qintptr*
+  const QByteArray& event_type, void* message, long*
 ) {
   if (_client_timestamp_ms <= 0 || event_type != "xcb_generic_event_t") {
     return false;

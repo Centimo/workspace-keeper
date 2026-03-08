@@ -70,14 +70,15 @@ chmod +x "$HOME/.local/bin/workspace"
 echo "Generating bash constants..."
 "$REPO_DIR/scripts/generate_constants.sh"
 
+# --- Build Docker image ---
+BUILD_IMAGE="workspace-build"
+if ! docker image inspect "$BUILD_IMAGE" &>/dev/null; then
+  echo "  Building Docker image from Dockerfile..."
+  docker build -t "$BUILD_IMAGE" "$REPO_DIR"
+fi
+
 # --- Build daemon ---
 echo "Building workspace-menu daemon..."
-
-DAEMON_IMAGE="workspace-menu-build"
-if ! docker image inspect "$DAEMON_IMAGE" &>/dev/null; then
-  echo "  Building Docker image from daemon/Dockerfile..."
-  docker build -t "$DAEMON_IMAGE" "$REPO_DIR/daemon"
-fi
 
 # Use a separate build dir to avoid conflicts with dev builds in daemon/build
 BUILD_DIR="$REPO_DIR/daemon/build-install"
@@ -89,7 +90,7 @@ docker run --rm \
   -v /etc/group:/etc/group:ro \
   -v "$REPO_DIR:$REPO_DIR" \
   -w "$BUILD_DIR" \
-  "$DAEMON_IMAGE" bash -c "
+  "$BUILD_IMAGE" bash -c "
     cmake '$REPO_DIR/daemon' -DCMAKE_BUILD_TYPE=Release
     make -j8
   "
@@ -112,12 +113,6 @@ echo "  Daemon started (PID $!)"
 # --- Build and install QML monitor plugin ---
 echo "Building workspace monitor QML plugin..."
 
-PLUGIN_IMAGE="workspace-monitor-plugin-build"
-if ! docker image inspect "$PLUGIN_IMAGE" &>/dev/null; then
-  echo "  Building Docker image from plasmoid/plugin/Dockerfile..."
-  docker build -t "$PLUGIN_IMAGE" "$REPO_DIR/plasmoid/plugin"
-fi
-
 PLUGIN_BUILD_DIR="$REPO_DIR/plasmoid/plugin/build-install"
 mkdir -p "$PLUGIN_BUILD_DIR"
 
@@ -127,7 +122,7 @@ docker run --rm \
   -v /etc/group:/etc/group:ro \
   -v "$REPO_DIR:$REPO_DIR" \
   -w "$PLUGIN_BUILD_DIR" \
-  "$PLUGIN_IMAGE" bash -c "
+  "$BUILD_IMAGE" bash -c "
     cmake '$REPO_DIR/plasmoid/plugin' -DCMAKE_BUILD_TYPE=Release
     make -j8
   "

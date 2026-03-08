@@ -405,16 +405,16 @@ void Status_overlay::mousePressEvent(QMouseEvent* event) {
     if (edges != EDGE_NONE) {
       _resizing = true;
       _resize_edges = edges;
-      _resize_origin = event->globalPosition().toPoint();
+      _resize_origin = event->globalPos();
       _resize_start_geometry = geometry();
     }
     else {
       _dragging = true;
-      _drag_offset = event->globalPosition().toPoint() - frameGeometry().topLeft();
+      _drag_offset = event->globalPos() - frameGeometry().topLeft();
     }
   }
   else {
-    _press_global_pos = event->globalPosition().toPoint();
+    _press_global_pos = event->globalPos();
   }
 
   event->accept();
@@ -423,7 +423,7 @@ void Status_overlay::mousePressEvent(QMouseEvent* event) {
 void Status_overlay::mouseMoveEvent(QMouseEvent* event) {
   if (_edit_mode) {
     if (_resizing) {
-      auto delta = event->globalPosition().toPoint() - _resize_origin;
+      auto delta = event->globalPos() - _resize_origin;
       auto geo = _resize_start_geometry;
       int min_w = _cell_size + 2 * _padding;
       int min_h = _cell_size + 2 * _padding;
@@ -443,7 +443,7 @@ void Status_overlay::mouseMoveEvent(QMouseEvent* event) {
       update();
     }
     else if (_dragging) {
-      move(event->globalPosition().toPoint() - _drag_offset);
+      move(event->globalPos() - _drag_offset);
       event->accept();
     }
     else {
@@ -474,7 +474,7 @@ void Status_overlay::mouseReleaseEvent(QMouseEvent* event) {
   }
   else {
     // Normal mode — click to switch desktop
-    auto release_pos = event->globalPosition().toPoint();
+    auto release_pos = event->globalPos();
     if ((release_pos - _press_global_pos).manhattanLength() < 5) {
       auto cell_index = cell_at(event->pos());
       if (cell_index >= 0)

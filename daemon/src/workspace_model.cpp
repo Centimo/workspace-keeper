@@ -90,7 +90,7 @@ void Workspace_model::rebuild(
 
     if (path_input.endsWith('/')) {
       dir_part = path_input;
-      prefix = {};
+      prefix.clear();
     }
     else {
       QFileInfo fi(path_input);
@@ -267,7 +267,7 @@ QString Workspace_model::compute_tab_completion(const QString& input) {
 
   if (input.endsWith('/')) {
     dir_part = input;
-    prefix = {};
+    prefix.clear();
   }
   else {
     QFileInfo fi(input);

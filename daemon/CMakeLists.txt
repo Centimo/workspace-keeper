@@ -5,7 +5,9 @@ set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_AUTOMOC ON)
 
-find_package(Qt6 REQUIRED COMPONENTS Core Gui Widgets Network DBus Sql)
+add_subdirectory(../common common)
+
+find_package(Qt5 REQUIRED COMPONENTS Core Gui Widgets Network DBus Sql)
 find_package(PkgConfig REQUIRED)
 pkg_check_modules(XCB REQUIRED xcb)
 pkg_check_modules(SYSTEMD REQUIRED libsystemd)
@@ -37,12 +39,13 @@ target_compile_options(workspace-menu PRIVATE -Wall -Wextra -Wpedantic)
 target_compile_definitions(workspace-menu PRIVATE QT_MESSAGELOGCONTEXT)
 
 target_link_libraries(workspace-menu PRIVATE
-  Qt6::Core
-  Qt6::Gui
-  Qt6::Widgets
-  Qt6::Network
-  Qt6::DBus
-  Qt6::Sql
+  workspace-common
+  Qt5::Core
+  Qt5::Gui
+  Qt5::Widgets
+  Qt5::Network
+  Qt5::DBus
+  Qt5::Sql
   ${XCB_LIBRARIES}
   ${SYSTEMD_LIBRARIES}
 )

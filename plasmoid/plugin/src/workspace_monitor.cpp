@@ -1,4 +1,5 @@
 #include "workspace_monitor.h"
+#include "kwin_desktop.h"
 
 #include <QDBusArgument>
 #include <QDBusConnection>
@@ -9,38 +10,6 @@
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
-
-namespace {
-
-/// Parse KWin VirtualDesktop struct (position: uint, id: string, name: string) from QDBusArgument.
-QVariantMap parse_desktop(const QDBusArgument& argument) {
-  uint position = 0;
-  QString id;
-  QString name;
-  argument.beginStructure();
-  argument >> position >> id >> name;
-  argument.endStructure();
-  return {{"id", id}, {"name", name}, {"position", position}};
-}
-
-/// Parse desktops array from a QDBusArgument containing a(uss).
-QVariantList parse_desktops(const QDBusArgument& argument) {
-  QVariantList result;
-  argument.beginArray();
-  while (!argument.atEnd())
-    result.append(parse_desktop(argument));
-  argument.endArray();
-  return result;
-}
-
-/// Sort desktops list by position.
-void sort_by_position(QVariantList& desktops) {
-  std::sort(desktops.begin(), desktops.end(), [](const QVariant& a, const QVariant& b) {
-    return a.toMap()["position"].toUInt() < b.toMap()["position"].toUInt();
-  });
-}
-
-} // namespace
 
 Workspace_monitor::Workspace_monitor(QObject* parent)
   : QObject(parent)

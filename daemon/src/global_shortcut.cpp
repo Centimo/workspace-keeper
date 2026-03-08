@@ -56,7 +56,7 @@ void Global_shortcut::register_shortcut() {
     _friendly_name
   };
 
-  QList<int> keys = {static_cast<int>(_shortcut[0].toCombined())};
+  QList<int> keys = {_shortcut[0]};
 
   QDBusInterface iface(kglobalaccel_service, kglobalaccel_path, kglobalaccel_iface, bus);
 
