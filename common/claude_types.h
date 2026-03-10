@@ -1,6 +1,7 @@
 #pragma once
 
 #include <QString>
+#include <QVariantMap>
 
 /// Execution state of a Claude Code session within a workspace.
 enum class Claude_state {
@@ -9,24 +10,6 @@ enum class Claude_state {
   REQUESTING,   ///< User prompt submitted, waiting for first tool call
   WORKING,      ///< Executing a tool call
   WAITING       ///< Blocked on user input (permission prompt or elicitation dialog)
-};
-
-/// Event types received from hook scripts.
-enum class Claude_event {
-  SESSION_START,
-  PROMPT_SUBMIT,
-  WORKING,
-  POST_TOOL,
-  STOP,
-  NOTIFICATION,
-  SESSION_END
-};
-
-/// Notification subtypes from Claude Code.
-enum class Claude_notification {
-  PERMISSION_PROMPT,
-  ELICITATION_DIALOG,
-  IDLE_PROMPT
 };
 
 /// Per-workspace snapshot of Claude Code status.
@@ -38,4 +21,8 @@ struct Claude_workspace_status {
   QString wait_message;  ///< User-facing wait message (only meaningful in WAITING state)
   qint64 state_since_ms = 0;  ///< Epoch millis when current state began
   QString session_id;
+
+  /// Convert to QVariantMap for QML property access.
+  /// State is converted to wire-format string ("idle", "working", etc.).
+  QVariantMap to_variant_map() const;
 };

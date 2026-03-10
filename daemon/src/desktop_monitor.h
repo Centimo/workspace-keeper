@@ -1,8 +1,10 @@
 #pragma once
 
+#include <kwin_desktop.h>
+
 #include <QDBusPendingCallWatcher>
 #include <QObject>
-#include <QVariantList>
+#include <QVector>
 
 class QDBusMessage;
 
@@ -14,7 +16,7 @@ class Desktop_monitor : public QObject {
  public:
   explicit Desktop_monitor(QObject* parent = nullptr);
 
-  const QVariantList& desktops() const { return _desktops; }
+  const QVector< Kwin_desktop>& desktops() const { return _desktops; }
 
   void switch_to_desktop(int index);
 
@@ -30,5 +32,5 @@ class Desktop_monitor : public QObject {
  private:
   void fetch_desktops();
 
-  QVariantList _desktops;
+  QVector< Kwin_desktop> _desktops;
 };

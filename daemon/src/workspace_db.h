@@ -1,6 +1,6 @@
 #pragma once
 
-#include "claude_types.h"
+#include <claude_types.h>
 
 #include <QJsonArray>
 #include <QSqlDatabase>

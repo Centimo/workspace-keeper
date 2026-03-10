@@ -1,10 +1,15 @@
 #pragma once
 
+#include <claude_types.h>
+#include <kwin_desktop.h>
+
 #include <QDBusPendingCallWatcher>
 #include <QDBusServiceWatcher>
+#include <QHash>
 #include <QObject>
 #include <QVariantList>
 #include <QVariantMap>
+#include <QVector>
 
 class QDBusMessage;
 
@@ -18,8 +23,20 @@ class Workspace_monitor : public QObject {
  public:
   explicit Workspace_monitor(QObject* parent = nullptr);
 
-  QVariantList desktops() const { return _desktops; }
-  QVariantMap claude_statuses() const { return _claude_statuses; }
+  QVariantList desktops() const {
+    QVariantList result;
+    result.reserve(_desktops.size());
+    for (const auto& d : _desktops)
+      result.append(d.to_variant_map());
+    return result;
+  }
+
+  QVariantMap claude_statuses() const {
+    QVariantMap result;
+    for (auto it = _claude_statuses.begin(); it != _claude_statuses.end(); ++it)
+      result[it.key()] = it->to_variant_map();
+    return result;
+  }
 
   Q_INVOKABLE void switchToDesktop(int index);
 
@@ -51,7 +68,7 @@ class Workspace_monitor : public QObject {
   void fetch_desktops();
   void fetch_all_statuses();
 
-  QVariantList _desktops;
-  QVariantMap _claude_statuses;
+  QVector< Kwin_desktop> _desktops;
+  QHash< QString, Claude_workspace_status> _claude_statuses;
   QDBusServiceWatcher _daemon_watcher;
 };

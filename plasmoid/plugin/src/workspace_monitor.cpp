@@ -1,5 +1,6 @@
 #include "workspace_monitor.h"
-#include "kwin_desktop.h"
+
+#include <enum_strings.h>
 
 #include <QDBusArgument>
 #include <QDBusConnection>
@@ -68,7 +69,7 @@ void Workspace_monitor::switchToDesktop(int index) {
   if (index < 0 || index >= _desktops.size())
     return;
 
-  auto id = _desktops[index].toMap()["id"].toString();
+  const auto& id = _desktops[index].id;
   auto message = QDBusMessage::createMethodCall(
     "org.kde.KWin", "/VirtualDesktopManager",
     "org.kde.KWin.VirtualDesktopManager", "setCurrentDesktop"
@@ -105,13 +106,14 @@ void Workspace_monitor::on_status_changed(
   const QString& wait_message,
   qlonglong state_since_ms
 ) {
-  QVariantMap entry;
-  entry["state"] = state;
-  entry["tool_name"] = tool_name;
-  entry["wait_reason"] = wait_reason;
-  entry["wait_message"] = wait_message;
-  entry["state_since_ms"] = state_since_ms;
-  _claude_statuses[workspace_name] = entry;
+  _claude_statuses[workspace_name] = Claude_workspace_status{
+    .workspace_name = workspace_name,
+    .state = from_wire_string< Claude_state>(state).value_or(Claude_state::NOT_RUNNING),
+    .tool_name = tool_name,
+    .wait_reason = wait_reason,
+    .wait_message = wait_message,
+    .state_since_ms = state_since_ms
+  };
   emit claudeStatusesChanged();
 }
 
@@ -173,18 +175,19 @@ void Workspace_monitor::on_statuses_fetched(QDBusPendingCallWatcher* watcher) {
   if (!doc.isArray())
     return;
 
-  QVariantMap statuses;
+  QHash< QString, Claude_workspace_status> statuses;
   for (const auto& value : doc.array()) {
     auto obj = value.toObject();
     auto name = obj["name"].toString();
-    QVariantMap entry;
-    entry["state"] = obj["state"].toString();
-    entry["tool_name"] = obj["tool_name"].toString();
-    entry["wait_reason"] = obj["wait_reason"].toString();
-    entry["wait_message"] = obj["wait_message"].toString();
-    // state_since_ms is integer in JSON; toVariant() preserves qlonglong for large numbers.
-    entry["state_since_ms"] = obj["state_since_ms"].toVariant().toLongLong();
-    statuses[name] = entry;
+    statuses[name] = Claude_workspace_status{
+      .workspace_name = name,
+      .state = from_wire_string< Claude_state>(obj["state"].toString())
+        .value_or(Claude_state::NOT_RUNNING),
+      .tool_name = obj["tool_name"].toString(),
+      .wait_reason = obj["wait_reason"].toString(),
+      .wait_message = obj["wait_message"].toString(),
+      .state_since_ms = obj["state_since_ms"].toVariant().toLongLong()
+    };
   }
   _claude_statuses = statuses;
   emit claudeStatusesChanged();

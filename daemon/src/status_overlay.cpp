@@ -131,13 +131,14 @@ void Status_overlay::on_status_changed(
   const QString& wait_message,
   qint64 state_since_ms
 ) {
-  QVariantMap entry;
-  entry["state"] = static_cast< int>(state);
-  entry["tool_name"] = tool_name;
-  entry["wait_reason"] = wait_reason;
-  entry["wait_message"] = wait_message;
-  entry["state_since_ms"] = state_since_ms;
-  _claude_statuses[workspace] = entry;
+  _claude_statuses[workspace] = Claude_workspace_status{
+    .workspace_name = workspace,
+    .state = state,
+    .tool_name = tool_name,
+    .wait_reason = wait_reason,
+    .wait_message = wait_message,
+    .state_since_ms = state_since_ms
+  };
   update_cells();
   update();
 }
@@ -178,18 +179,16 @@ void Status_overlay::update_cells() {
   _cells.clear();
   const auto& desktops = _desktop_monitor.desktops();
   for (const auto& desktop : desktops) {
-    auto name = desktop.toMap()["name"].toString();
     Cell_info cell;
-    cell.workspace_name = name;
+    cell.workspace_name = desktop.name;
 
-    auto it = _claude_statuses.find(name);
+    auto it = _claude_statuses.find(desktop.name);
     if (it != _claude_statuses.end()) {
-      auto entry = it->toMap();
-      cell.state = static_cast< Claude_state>(entry["state"].toInt());
-      cell.tool_name = entry["tool_name"].toString();
-      cell.wait_reason = entry["wait_reason"].toString();
-      cell.wait_message = entry["wait_message"].toString();
-      cell.state_since_ms = entry["state_since_ms"].toLongLong();
+      cell.state = it->state;
+      cell.tool_name = it->tool_name;
+      cell.wait_reason = it->wait_reason;
+      cell.wait_message = it->wait_message;
+      cell.state_since_ms = it->state_since_ms;
     }
 
     _cells.append(cell);

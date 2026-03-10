@@ -26,10 +26,10 @@ add_executable(workspace-menu
   src/workspace_manager_dbus.cpp
   src/desktop_monitor.cpp
   src/status_overlay.cpp
+  src/tab_tracker.cpp
 )
 
 target_include_directories(workspace-menu PRIVATE
-  ${CMAKE_CURRENT_SOURCE_DIR}/third_party
   ${XCB_INCLUDE_DIRS}
   ${SYSTEMD_INCLUDE_DIRS}
 )

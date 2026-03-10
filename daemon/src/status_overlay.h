@@ -1,11 +1,10 @@
 #pragma once
 
-#include "claude_types.h"
+#include <claude_types.h>
 
+#include <QHash>
 #include <QPoint>
 #include <QSize>
-#include <QVariantList>
-#include <QVariantMap>
 #include <QWidget>
 
 class Desktop_monitor;
@@ -86,7 +85,7 @@ class Status_overlay : public QWidget {
   Workspace_db& _db;
 
   QVector< Cell_info> _cells;
-  QVariantMap _claude_statuses;
+  QHash< QString, Claude_workspace_status> _claude_statuses;
 
   bool _edit_mode = false;
 

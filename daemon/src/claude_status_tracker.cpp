@@ -1,4 +1,5 @@
 #include "claude_status_tracker.h"
+#include "claude_event_types.h"
 #include "enum_strings.h"
 #include "journal_log.h"
 #include "workspace_db.h"

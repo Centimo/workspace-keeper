@@ -1,6 +1,5 @@
 #include "desktop_monitor.h"
 #include "journal_log.h"
-#include "kwin_desktop.h"
 
 #include <QDBusArgument>
 #include <QDBusConnection>
@@ -42,7 +41,7 @@ void Desktop_monitor::switch_to_desktop(int index) {
   if (index < 0 || index >= _desktops.size())
     return;
 
-  auto id = _desktops[index].toMap()["id"].toString();
+  const auto& id = _desktops[index].id;
   auto message = QDBusMessage::createMethodCall(
     "org.kde.KWin", "/VirtualDesktopManager",
     "org.freedesktop.DBus.Properties", "Set"
