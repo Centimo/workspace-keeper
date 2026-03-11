@@ -52,6 +52,15 @@ void Desktop_monitor::switch_to_desktop(int index) {
   QDBusConnection::sessionBus().call(message, QDBus::NoBlock);
 }
 
+void Desktop_monitor::switch_to_desktop_by_name(const QString& name) {
+  for (int i = 0; i < _desktops.size(); ++i) {
+    if (_desktops[i].name == name) {
+      switch_to_desktop(i);
+      return;
+    }
+  }
+}
+
 void Desktop_monitor::on_desktop_created(const QDBusMessage&) {
   fetch_desktops();
 }

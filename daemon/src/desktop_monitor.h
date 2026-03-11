@@ -19,6 +19,7 @@ class Desktop_monitor : public QObject {
   const QVector< Kwin_desktop>& desktops() const { return _desktops; }
 
   void switch_to_desktop(int index);
+  void switch_to_desktop_by_name(const QString& name);
 
  signals:
   void desktops_changed();
