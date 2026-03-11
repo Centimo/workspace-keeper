@@ -12,6 +12,15 @@ enum class Claude_state {
   WAITING       ///< Blocked on user input (permission prompt or elicitation dialog)
 };
 
+/// Background color hex string for the given state (e.g. "#1d5fa0").
+const char* state_color_hex(Claude_state state);
+
+/// Text color hex string for the given state.
+const char* state_text_color_hex(Claude_state state);
+
+/// Single-character label for the given state (e.g. "R", "W").
+const char* state_label(Claude_state state);
+
 /// Per-workspace snapshot of Claude Code status.
 struct Claude_workspace_status {
   QString workspace_name;

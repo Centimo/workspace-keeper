@@ -38,19 +38,19 @@ ColumnLayout {
       required property string modelData
       property string workspaceName: modelData
       property var status: root.claudeStatuses[workspaceName] || null
-      property string state: status ? status.state : "not_running"
+      property string stateStr: status ? status.state : ""
 
       Layout.fillWidth: true
       Layout.preferredHeight: width
       radius: 3
-      color: stateColor(state)
+      color: monitor.stateColor(stateStr)
       border.color: Qt.lighter(color, 1.3)
       border.width: 1
 
       Text {
         anchors.centerIn: parent
-        text: stateLabel(btn.state)
-        color: stateTextColor(btn.state)
+        text: monitor.stateLabel(btn.stateStr)
+        color: monitor.stateTextColor(btn.stateStr)
         font.family: "Hack, monospace"
         font.pixelSize: Math.round(root.cellSize * 0.4)
         font.bold: true
@@ -68,38 +68,6 @@ ColumnLayout {
         mainText: btn.workspaceName
         subText: tooltipText(btn.status)
       }
-    }
-  }
-
-  // === Functions ===
-
-  function stateColor(state) {
-    switch (state) {
-      case "requesting": return "#1d5fa0";
-      case "working":    return "#2d8a4e";
-      case "waiting":    return "#b08020";
-      case "idle":       return "#555555";
-      default:           return "#3a3a3a";
-    }
-  }
-
-  function stateTextColor(state) {
-    switch (state) {
-      case "requesting": return "#ffffff";
-      case "working":    return "#ffffff";
-      case "waiting":    return "#ffffff";
-      case "idle":       return "#aaaaaa";
-      default:           return "#666666";
-    }
-  }
-
-  function stateLabel(state) {
-    switch (state) {
-      case "requesting": return "R";
-      case "working":    return "W";
-      case "waiting":    return "?";
-      case "idle":       return "_";
-      default:           return "-";
     }
   }
 

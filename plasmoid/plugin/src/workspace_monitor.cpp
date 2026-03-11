@@ -65,6 +65,18 @@ Workspace_monitor::Workspace_monitor(QObject* parent)
   fetch_all_statuses();
 }
 
+QString Workspace_monitor::stateColor(const QString& state) const {
+  return state_color_hex(from_wire_string< Claude_state>(state).value_or(Claude_state::NOT_RUNNING));
+}
+
+QString Workspace_monitor::stateTextColor(const QString& state) const {
+  return state_text_color_hex(from_wire_string< Claude_state>(state).value_or(Claude_state::NOT_RUNNING));
+}
+
+QString Workspace_monitor::stateLabel(const QString& state) const {
+  return state_label(from_wire_string< Claude_state>(state).value_or(Claude_state::NOT_RUNNING));
+}
+
 void Workspace_monitor::switchToDesktop(int index) {
   if (index < 0 || index >= _desktops.size())
     return;

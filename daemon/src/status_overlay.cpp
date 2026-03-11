@@ -319,39 +319,6 @@ Qt::CursorShape Status_overlay::cursor_for_edges(unsigned edges) const {
   return Qt::ArrowCursor;
 }
 
-QColor Status_overlay::state_color(Claude_state state) {
-  switch (state) {
-    case Claude_state::REQUESTING:  return QColor(0x1d, 0x5f, 0xa0);
-    case Claude_state::WORKING:     return QColor(0x2d, 0x8a, 0x4e);
-    case Claude_state::WAITING:     return QColor(0xb0, 0x80, 0x20);
-    case Claude_state::IDLE:        return QColor(0x55, 0x55, 0x55);
-    case Claude_state::NOT_RUNNING: return QColor(0x3a, 0x3a, 0x3a);
-  }
-  return QColor(0x3a, 0x3a, 0x3a);
-}
-
-QColor Status_overlay::state_text_color(Claude_state state) {
-  switch (state) {
-    case Claude_state::REQUESTING:  return QColor(0xff, 0xff, 0xff);
-    case Claude_state::WORKING:     return QColor(0xff, 0xff, 0xff);
-    case Claude_state::WAITING:     return QColor(0xff, 0xff, 0xff);
-    case Claude_state::IDLE:        return QColor(0xaa, 0xaa, 0xaa);
-    case Claude_state::NOT_RUNNING: return QColor(0x66, 0x66, 0x66);
-  }
-  return QColor(0x66, 0x66, 0x66);
-}
-
-QString Status_overlay::state_label(Claude_state state) {
-  switch (state) {
-    case Claude_state::REQUESTING:  return "R";
-    case Claude_state::WORKING:     return "W";
-    case Claude_state::WAITING:     return "?";
-    case Claude_state::IDLE:        return "_";
-    case Claude_state::NOT_RUNNING: return "-";
-  }
-  return "-";
-}
-
 // --- Event handling ---
 
 void Status_overlay::paintEvent(QPaintEvent*) {
@@ -371,13 +338,13 @@ void Status_overlay::paintEvent(QPaintEvent*) {
 
   for (int i = 0; i < _cells.size(); ++i) {
     auto rect = cell_rect(i);
-    auto color = state_color(_cells[i].state);
+    QColor color(state_color_hex(_cells[i].state));
 
     painter.setPen(QPen(color.lighter(130), 1));
     painter.setBrush(color);
     painter.drawRoundedRect(rect, 3, 3);
 
-    painter.setPen(state_text_color(_cells[i].state));
+    painter.setPen(QColor(state_text_color_hex(_cells[i].state)));
     painter.drawText(rect, Qt::AlignCenter, state_label(_cells[i].state));
 
     if (i == _hovered_cell && !_edit_mode) {

@@ -77,10 +77,6 @@ class Status_overlay : public QWidget {
   unsigned edges_at(const QPoint& pos) const;
   Qt::CursorShape cursor_for_edges(unsigned edges) const;
 
-  static QColor state_color(Claude_state state);
-  static QColor state_text_color(Claude_state state);
-  static QString state_label(Claude_state state);
-
   Desktop_monitor& _desktop_monitor;
   Workspace_db& _db;
 

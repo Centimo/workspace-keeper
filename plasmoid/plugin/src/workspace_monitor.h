@@ -40,6 +40,10 @@ class Workspace_monitor : public QObject {
 
   Q_INVOKABLE void switchToDesktop(int index);
 
+  Q_INVOKABLE QString stateColor(const QString& state) const;
+  Q_INVOKABLE QString stateTextColor(const QString& state) const;
+  Q_INVOKABLE QString stateLabel(const QString& state) const;
+
  signals:
   void desktopsChanged();
   void claudeStatusesChanged();
