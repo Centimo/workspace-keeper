@@ -1,5 +1,4 @@
 #include "workspace_manager_dbus.h"
-#include "claude_status_tracker.h"
 #include "journal_log.h"
 #include "workspace_db.h"
 
@@ -7,14 +6,9 @@
 #include <QDBusError>
 #include <QJsonDocument>
 
-Workspace_manager_dbus::Workspace_manager_dbus(
-  Workspace_db& db,
-  Claude_status_tracker& claude_tracker,
-  QObject* parent
-)
+Workspace_manager_dbus::Workspace_manager_dbus(Workspace_db& db, QObject* parent)
   : QDBusAbstractAdaptor(parent)
   , _db(db)
-  , _claude_tracker(claude_tracker)
 {
   auto bus = QDBusConnection::sessionBus();
   if (!bus.isConnected()) {
@@ -57,13 +51,4 @@ void Workspace_manager_dbus::SetTabs(const QString& workspace_name, const QStrin
 
 QString Workspace_manager_dbus::GetTabs(const QString& workspace_name) {
   return _db.get_tabs(workspace_name).join('\n');
-}
-
-void Workspace_manager_dbus::ReportClaudeEvent(
-  const QString& workspace,
-  const QString& event_type,
-  const QString& args_tsv
-) {
-  auto args = args_tsv.split('\t');
-  _claude_tracker.process_event(workspace, event_type, args);
 }

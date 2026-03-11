@@ -53,6 +53,15 @@ QString Claude_status_dbus::GetAllStatuses() {
   return QJsonDocument(array).toJson(QJsonDocument::Compact);
 }
 
+void Claude_status_dbus::ReportClaudeEvent(
+  const QString& workspace,
+  const QString& event_type,
+  const QString& args_tsv
+) {
+  auto args = args_tsv.split('\t');
+  _tracker.process_event(workspace, event_type, args);
+}
+
 void Claude_status_dbus::on_status_changed(
   const QString& workspace,
   Claude_state state,

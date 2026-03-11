@@ -6,6 +6,7 @@
 #include "journal_log.h"
 #include "menu_window.h"
 #include "status_overlay.h"
+#include "tab_tracker.h"
 #include "workspace_db.h"
 #include "workspace_manager_dbus.h"
 
@@ -62,7 +63,7 @@ int main(int argc, char* argv[]) {
   // Workspace manager D-Bus service (org.workspace.Manager /Manager).
   // Needs a stable QObject as parent for D-Bus object registration.
   QObject manager_host;
-  new Workspace_manager_dbus(db, claude_tracker, &manager_host);
+  new Workspace_manager_dbus(db, &manager_host);
 
   Desktop_monitor desktop_monitor;
   Status_overlay overlay(desktop_monitor, db);
@@ -78,6 +79,9 @@ int main(int argc, char* argv[]) {
       status.state_since_ms
     );
   }
+
+  Tab_tracker tab_tracker(db);
+  tab_tracker.start();
 
   Daemon_server server(window);
   if (!server.start()) {

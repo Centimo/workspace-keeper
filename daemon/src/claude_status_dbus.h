@@ -19,6 +19,8 @@ class Claude_status_dbus : public QDBusAbstractAdaptor {
   /// [{name, state, tool_name, wait_reason, wait_message, state_since_ms}, ...]
   QString GetAllStatuses();
 
+  void ReportClaudeEvent(const QString& workspace, const QString& event_type, const QString& args_tsv);
+
  signals:
   void StatusChanged(
     const QString& workspace_name,
