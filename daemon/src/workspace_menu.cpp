@@ -1,14 +1,12 @@
 #include "workspace_menu.h"
+#include "desktop_monitor.h"
 #include "journal_log.h"
 #include "workspace_db.h"
 
-#include <QElapsedTimer>
-#include <QProcess>
-#include <QRegularExpression>
-
-Workspace_menu::Workspace_menu(Workspace_db& db, QObject* parent)
+Workspace_menu::Workspace_menu(Workspace_db& db, Desktop_monitor& desktop_monitor, QObject* parent)
   : QObject(parent)
   , _db(db)
+  , _desktop_monitor(desktop_monitor)
 {}
 
 void Workspace_menu::begin_session() {
@@ -96,65 +94,7 @@ QString Workspace_menu::tab_complete() {
 void Workspace_menu::load_data() {
   _active_desktops.clear();
   _saved_workspaces.clear();
-  _current_desktop_name.clear();
 
-  // Read active desktops from wmctrl -d
-  QProcess wmctrl;
-  QElapsedTimer timer;
-  timer.start();
-  wmctrl.start("wmctrl", {"-d"});
-
-  QVector< Desktop_info> desktops;
-
-  if (wmctrl.waitForFinished(2000) && wmctrl.exitCode() == 0) {
-    auto elapsed = timer.elapsed();
-    if (elapsed > 100) {
-      qCWarning(logWindow, "wmctrl -d took %lld ms (blocking event loop)", elapsed);
-    }
-    auto output = QString::fromUtf8(wmctrl.readAllStandardOutput());
-    auto lines = output.split('\n', Qt::SkipEmptyParts);
-
-    static const QRegularExpression whitespace_re("\\s+");
-    static const QRegularExpression geometry_re("^\\d+x\\d+$");
-
-    for (const auto& line : lines) {
-      auto parts = line.split(whitespace_re, Qt::SkipEmptyParts);
-      bool is_current = parts.size() > 1 && parts[1] == "*";
-
-      int geo_idx = -1;
-      for (int i = 0; i < parts.size(); ++i) {
-        if (parts[i].contains(geometry_re)) {
-          geo_idx = i;
-        }
-      }
-      if (geo_idx >= 0 && geo_idx + 1 < parts.size()) {
-        QStringList name_parts;
-        for (int i = geo_idx + 1; i < parts.size(); ++i) {
-          name_parts.append(parts[i]);
-        }
-        QString name = name_parts.join(' ');
-        int index = parts[0].toInt();
-        desktops.append({index, name, is_current});
-
-        if (is_current) {
-          _current_desktop_name = name;
-        }
-      }
-    }
-
-    std::sort(desktops.begin(), desktops.end(), [](const auto& a, const auto& b) {
-      return a.index < b.index;
-    });
-  }
-  else {
-    qCWarning(logWindow, "wmctrl -d failed after %lld ms (exit=%d, state=%d)",
-      timer.elapsed(), wmctrl.exitCode(), static_cast< int>(wmctrl.state()));
-  }
-
-  // Sync to database
-  _db.sync_active_desktops(desktops);
-
-  // Read back from database
   auto active = _db.active_desktops();
   for (const auto& ws : active) {
     _active_desktops.append({ws.name, ws.project_dir});
@@ -167,5 +107,5 @@ void Workspace_menu::load_data() {
 }
 
 void Workspace_menu::rebuild_model() {
-  _model.rebuild(_filter_text, _active_desktops, _saved_workspaces, _filter_text, _current_desktop_name);
+  _model.rebuild(_filter_text, _active_desktops, _saved_workspaces, _filter_text, _desktop_monitor.current_desktop_name());
 }

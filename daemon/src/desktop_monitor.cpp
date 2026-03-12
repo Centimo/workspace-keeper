@@ -34,6 +34,13 @@ Desktop_monitor::Desktop_monitor(QObject* parent)
   ))
     qCWarning(logServer, "Desktop_monitor: failed to connect desktopDataChanged signal");
 
+  if (!bus.connect(
+    "org.kde.KWin", "/VirtualDesktopManager",
+    "org.kde.KWin.VirtualDesktopManager", "currentDesktopChanged",
+    this, SLOT(on_current_desktop_changed(QDBusMessage))
+  ))
+    qCWarning(logServer, "Desktop_monitor: failed to connect currentDesktopChanged signal");
+
   fetch_desktops();
 }
 
@@ -73,6 +80,55 @@ void Desktop_monitor::on_desktop_data_changed(const QDBusMessage&) {
   fetch_desktops();
 }
 
+void Desktop_monitor::on_current_desktop_changed(const QDBusMessage& message) {
+  // currentDesktopChanged(string id, int timestamp)
+  auto args = message.arguments();
+  if (args.isEmpty()) {
+    return;
+  }
+  QString current_id = args[0].toString();
+  for (const auto& desktop : _desktops) {
+    if (desktop.id == current_id) {
+      _current_desktop_name = desktop.name;
+      emit desktops_changed();
+      return;
+    }
+  }
+  qCWarning(logServer, "Desktop_monitor: currentDesktopChanged for unknown id '%s'",
+    qPrintable(current_id));
+}
+
+void Desktop_monitor::fetch_current_desktop() {
+  auto message = QDBusMessage::createMethodCall(
+    "org.kde.KWin", "/VirtualDesktopManager",
+    "org.freedesktop.DBus.Properties", "Get"
+  );
+  message << "org.kde.KWin.VirtualDesktopManager" << "current";
+
+  auto pending = QDBusConnection::sessionBus().asyncCall(message);
+  auto* watcher = new QDBusPendingCallWatcher(pending, this);
+  connect(watcher, &QDBusPendingCallWatcher::finished, this, [this](QDBusPendingCallWatcher* w) {
+    w->deleteLater();
+    QDBusPendingReply< QDBusVariant> reply = *w;
+    if (reply.isError()) {
+      qCWarning(logServer, "Desktop_monitor: fetch current desktop failed: %s",
+        qPrintable(reply.error().message()));
+      return;
+    }
+    QString current_id = reply.value().variant().toString();
+    for (const auto& desktop : _desktops) {
+      if (desktop.id == current_id) {
+        _current_desktop_name = desktop.name;
+        emit desktops_changed();
+        return;
+      }
+    }
+    qCWarning(logServer, "Desktop_monitor: current desktop id '%s' not found in desktops list",
+      qPrintable(current_id));
+    emit desktops_changed();
+  });
+}
+
 void Desktop_monitor::fetch_desktops() {
   auto message = QDBusMessage::createMethodCall(
     "org.kde.KWin", "/VirtualDesktopManager",
@@ -99,5 +155,5 @@ void Desktop_monitor::on_desktops_fetched(QDBusPendingCallWatcher* watcher) {
   _desktops = parse_desktops(argument);
   sort_by_position(_desktops);
   qCInfo(logServer, "Desktop_monitor: fetched %d desktops", static_cast< int>(_desktops.size()));
-  emit desktops_changed();
+  fetch_current_desktop();
 }

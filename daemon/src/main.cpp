@@ -51,7 +51,8 @@ int main(int argc, char* argv[]) {
   }
   db.migrate_from_config_dir(config_dir);
 
-  Menu_window window(db);
+  Desktop_monitor desktop_monitor;
+  Menu_window window(db, desktop_monitor);
 
   Claude_status_tracker claude_tracker(db);
   // Allocated on heap: QDBusAbstractAdaptor re-parents itself to its parent QObject,
@@ -63,8 +64,17 @@ int main(int argc, char* argv[]) {
   QObject manager_host;
   new Workspace_manager_dbus(db, &manager_host);
 
-  Desktop_monitor desktop_monitor;
   Status_overlay overlay(desktop_monitor, db);
+
+  QObject::connect(&desktop_monitor, &Desktop_monitor::desktops_changed, &app, [&db, &desktop_monitor]() {
+    QVector< Desktop_info> infos;
+    int index = 0;
+    const auto& current_name = desktop_monitor.current_desktop_name();
+    for (const auto& d : desktop_monitor.desktops()) {
+      infos.append({index++, d.name, d.name == current_name});
+    }
+    db.sync_active_desktops(infos);
+  });
 
   QObject::connect(&claude_tracker, &Claude_status_tracker::status_changed,
     &overlay, &Status_overlay::on_status_changed);

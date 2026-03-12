@@ -7,6 +7,7 @@
 #include <QVector>
 #include <QPair>
 
+class Desktop_monitor;
 class Workspace_db;
 
 class Workspace_menu : public QObject {
@@ -15,7 +16,7 @@ class Workspace_menu : public QObject {
   Q_PROPERTY(Workspace_model* model READ model CONSTANT)
 
  public:
-  explicit Workspace_menu(Workspace_db& db, QObject* parent = nullptr);
+  explicit Workspace_menu(Workspace_db& db, Desktop_monitor& desktop_monitor, QObject* parent = nullptr);
 
   void begin_session();
 
@@ -39,11 +40,11 @@ class Workspace_menu : public QObject {
   void rebuild_model();
 
   Workspace_db& _db;
+  Desktop_monitor& _desktop_monitor;
   QString _filter_text;
 
   QVector< QPair< QString, QString>> _active_desktops;
   QVector< QPair< QString, QString>> _saved_workspaces;
-  QString _current_desktop_name;
 
   Workspace_model _model;
 };

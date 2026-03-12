@@ -9,6 +9,7 @@ class QLabel;
 class QLineEdit;
 class QListWidget;
 class QListWidgetItem;
+class Desktop_monitor;
 class Workspace_db;
 
 class Menu_window
@@ -18,7 +19,7 @@ class Menu_window
   Q_OBJECT
 
  public:
-  explicit Menu_window(Workspace_db& db, QWidget* parent = nullptr);
+  explicit Menu_window(Workspace_db& db, Desktop_monitor& desktop_monitor, QWidget* parent = nullptr);
 
   void activate(qint64 client_timestamp_ms = 0);
   void cancel_session();

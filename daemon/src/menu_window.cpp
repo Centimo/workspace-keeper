@@ -1,4 +1,5 @@
 #include "menu_window.h"
+#include "desktop_monitor.h"
 #include "journal_log.h"
 
 #include <QApplication>
@@ -72,9 +73,9 @@ static QString header_style() {
   ).arg(header_x - 1);  // -1 for list widget 1px margin
 }
 
-Menu_window::Menu_window(Workspace_db& db, QWidget* parent)
+Menu_window::Menu_window(Workspace_db& db, Desktop_monitor& desktop_monitor, QWidget* parent)
   : QWidget(parent)
-  , _menu(db)
+  , _menu(db, desktop_monitor)
 {
   QCoreApplication::instance()->installNativeEventFilter(this);
 
