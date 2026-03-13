@@ -70,8 +70,11 @@ void Claude_status_dbus::on_status_changed(
   const QString& wait_message,
   qint64 state_since_ms
 ) {
-  emit StatusChanged(
-    workspace, to_wire_string(state),
-    tool_name, wait_reason, wait_message, state_since_ms
-  );
+  QVariantMap status;
+  status["state"] = to_wire_string(state);
+  status["tool_name"] = tool_name;
+  status["wait_reason"] = wait_reason;
+  status["wait_message"] = wait_message;
+  status["state_since_ms"] = state_since_ms;
+  emit StatusChanged(workspace, status);
 }

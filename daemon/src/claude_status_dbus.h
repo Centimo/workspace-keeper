@@ -4,6 +4,7 @@
 
 #include <QDBusAbstractAdaptor>
 #include <QString>
+#include <QVariantMap>
 
 /// D-Bus adaptor exposing Claude Code status on org.workspace.StatusMonitor /StatusMonitor.
 /// Provides GetAllStatuses() method and StatusChanged() signal.
@@ -22,14 +23,7 @@ class Claude_status_dbus : public QDBusAbstractAdaptor {
   void ReportClaudeEvent(const QString& workspace, const QString& event_type, const QString& args_tsv);
 
  signals:
-  void StatusChanged(
-    const QString& workspace_name,
-    const QString& state,
-    const QString& tool_name,
-    const QString& wait_reason,
-    const QString& wait_message,
-    qlonglong state_since_ms
-  );
+  void StatusChanged(const QString& workspace_name, const QVariantMap& status);
 
  private:
   void on_status_changed(

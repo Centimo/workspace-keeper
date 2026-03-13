@@ -50,7 +50,7 @@ Workspace_monitor::Workspace_monitor(QObject* parent)
   if (!bus.connect(
     "org.workspace.StatusMonitor", "/StatusMonitor",
     "org.workspace.StatusMonitor", "StatusChanged",
-    this, SLOT(on_status_changed(QString,QString,QString,QString,QString,qlonglong))
+    this, SLOT(on_status_changed(QString,QVariantMap))
   ))
     qWarning("Workspace_monitor: failed to connect StatusChanged signal");
 
@@ -110,21 +110,14 @@ void Workspace_monitor::on_desktop_data_changed(const QDBusMessage& message) {
 
 // --- Daemon signal handler ---
 
-void Workspace_monitor::on_status_changed(
-  const QString& workspace_name,
-  const QString& state,
-  const QString& tool_name,
-  const QString& wait_reason,
-  const QString& wait_message,
-  qlonglong state_since_ms
-) {
+void Workspace_monitor::on_status_changed(const QString& workspace_name, const QVariantMap& status) {
   _claude_statuses[workspace_name] = Claude_workspace_status{
     .workspace_name = workspace_name,
-    .state = from_wire_string< Claude_state>(state).value_or(Claude_state::NOT_RUNNING),
-    .tool_name = tool_name,
-    .wait_reason = wait_reason,
-    .wait_message = wait_message,
-    .state_since_ms = state_since_ms
+    .state = from_wire_string< Claude_state>(status["state"].toString()).value_or(Claude_state::NOT_RUNNING),
+    .tool_name = status["tool_name"].toString(),
+    .wait_reason = status["wait_reason"].toString(),
+    .wait_message = status["wait_message"].toString(),
+    .state_since_ms = status["state_since_ms"].toLongLong()
   };
   emit claudeStatusesChanged();
 }

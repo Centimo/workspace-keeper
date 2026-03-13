@@ -53,14 +53,7 @@ class Workspace_monitor : public QObject {
   void on_desktop_removed(const QDBusMessage& message);
   void on_desktop_data_changed(const QDBusMessage& message);
 
-  void on_status_changed(
-    const QString& workspace_name,
-    const QString& state,
-    const QString& tool_name,
-    const QString& wait_reason,
-    const QString& wait_message,
-    qlonglong state_since_ms
-  );
+  void on_status_changed(const QString& workspace_name, const QVariantMap& status);
 
   void on_daemon_registered();
   void on_daemon_unregistered();
