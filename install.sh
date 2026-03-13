@@ -66,6 +66,53 @@ generate config/kde/workspace-menu-daemon.desktop "$HOME/.config/autostart/works
 
 chmod +x "$HOME/.local/bin/workspace"
 
+# --- Install BroTab (forked, from submodule) ---
+BROTAB_DIR="$REPO_DIR/third_party/brotab"
+BROTAB_MARKER="$HOME/.local/share/workspace-menu/brotab-commit"
+BROTAB_COMMIT="$(git -C "$BROTAB_DIR" rev-parse HEAD 2>/dev/null || echo "")"
+
+if [[ -n "$BROTAB_COMMIT" ]] && [[ "$(cat "$BROTAB_MARKER" 2>/dev/null)" != "$BROTAB_COMMIT" ]]; then
+  echo "Installing BroTab from fork (commit ${BROTAB_COMMIT:0:7})..."
+
+  # Install/reinstall Python package via pipx
+  if command -v pipx &>/dev/null; then
+    pipx install --force "$BROTAB_DIR"
+    echo "  BroTab Python package installed via pipx"
+  else
+    echo "  Warning: pipx not found, skipping BroTab Python package install" >&2
+  fi
+
+  # Pack and install browser extension into Floorp profile
+  FLOORP_PROFILE_DIR=$(find "$HOME/.floorp" -maxdepth 1 -name "*.default*" -type d | head -1)
+  if [[ -n "$FLOORP_PROFILE_DIR" ]]; then
+    XPI_SRC="$BROTAB_DIR/brotab/extension/firefox"
+    XPI_DST="$FLOORP_PROFILE_DIR/extensions/brotab_mediator@example.org.xpi"
+
+    # Read manifest from installed xpi to get icon and manifest, overlay with fork's background.js
+    TMPDIR_XPI=$(mktemp -d)
+    if [[ -f "$XPI_DST" ]]; then
+      unzip -o "$XPI_DST" -d "$TMPDIR_XPI" >/dev/null 2>&1 || true
+    fi
+    # Remove old signatures (we build unsigned)
+    rm -r "$TMPDIR_XPI/META-INF" 2>/dev/null || true
+    # Copy our modified background.js and ensure manifest + icon exist
+    cp "$XPI_SRC/background.js" "$TMPDIR_XPI/background.js"
+    [[ ! -f "$TMPDIR_XPI/manifest.json" ]] && cp "$XPI_SRC/manifest.json" "$TMPDIR_XPI/manifest.json"
+    [[ ! -f "$TMPDIR_XPI/brotab-icon-128x128.png" ]] && \
+      cp "$BROTAB_DIR/brotab/extension/chrome/brotab-icon-128x128.png" "$TMPDIR_XPI/" 2>/dev/null || true
+    (cd "$TMPDIR_XPI" && zip -r "$XPI_DST" . >/dev/null)
+    rm -r "$TMPDIR_XPI"
+    echo "  BroTab extension installed to $XPI_DST"
+  else
+    echo "  Warning: no Floorp profile found, skipping extension install" >&2
+  fi
+
+  mkdir -p "$(dirname "$BROTAB_MARKER")"
+  echo "$BROTAB_COMMIT" > "$BROTAB_MARKER"
+else
+  echo "BroTab is up to date"
+fi
+
 # --- Generate bash constants from C++ enums ---
 echo "Generating bash constants..."
 "$REPO_DIR/scripts/generate_constants.sh"

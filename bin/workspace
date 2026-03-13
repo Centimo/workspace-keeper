@@ -701,19 +701,143 @@ cmd_menu() {
   cmd_handle_response "$response"
 }
 
+cmd_save_all() {
+  require_daemon
+
+  local desktops
+  desktops=$(wmctrl -d | awk '{
+    for(i=NF; i>0; i--) {
+      if ($i ~ /^[0-9]+x[0-9]+$/) break
+    }
+    idx=$1
+    result=""
+    for(j=i+1; j<=NF; j++) result = result (j>i+1 ? " " : "") $j
+    print idx "\t" result
+  }')
+
+  local saved=0
+  while IFS=$'\t' read -r idx name; do
+    [[ -z "$name" ]] && continue
+    local floorp_wid
+    floorp_wid=$(find_floorp_on_desktop "$idx")
+    if [[ -z "$floorp_wid" ]]; then
+      continue
+    fi
+    local bt_wid
+    if ! bt_wid=$(find_bt_window_for_x_window "$floorp_wid"); then
+      echo "Warning: could not match Floorp on desktop '$name' to BroTab" >&2
+      continue
+    fi
+    [[ -z "$bt_wid" ]] && continue
+
+    local tabs
+    tabs=$(bt list 2>/dev/null | grep "^${bt_wid}\." | awk -F'\t' '{print $3}' \
+      | grep -v '^about:')
+    dbus_call SetTabs "$name" "$tabs"
+    local count
+    count=$(echo "$tabs" | grep -c . || true)
+    echo "Saved $count tabs for '$name'"
+    (( saved++ ))
+  done <<< "$desktops"
+
+  echo "Done: saved tabs for $saved workspaces"
+}
+
+cmd_restore_browsers() {
+  require_daemon
+
+  local desktops
+  desktops=$(wmctrl -d | awk '{
+    for(i=NF; i>0; i--) {
+      if ($i ~ /^[0-9]+x[0-9]+$/) break
+    }
+    idx=$1
+    result=""
+    for(j=i+1; j<=NF; j++) result = result (j>i+1 ? " " : "") $j
+    print idx "\t" result
+  }')
+
+  local restored=0
+  while IFS=$'\t' read -r idx name; do
+    [[ -z "$name" ]] && continue
+
+    # Skip desktops that already have a Floorp window
+    local existing_floorp
+    existing_floorp=$(find_floorp_on_desktop "$idx")
+    if [[ -n "$existing_floorp" ]]; then
+      echo "Desktop '$name': Floorp already present, skipping"
+      continue
+    fi
+
+    local saved_tabs
+    saved_tabs=$(dbus_call GetTabs "$name")
+    if [[ -z "$saved_tabs" ]]; then
+      echo "Desktop '$name': no saved tabs, skipping"
+      continue
+    fi
+
+    echo "Desktop '$name': restoring $(echo "$saved_tabs" | wc -l) tabs..."
+
+    # Switch to target desktop (Floorp opens windows on current desktop)
+    wmctrl -s "$idx"
+    sleep 0.3
+
+    local before_floorp
+    before_floorp=$(wmctrl -l | awk '/Ablaze Floorp/ {print $1}' | sort)
+
+    local first_tab
+    first_tab=$(echo "$saved_tabs" | head -1)
+    floorp --new-window "$first_tab" &
+    sleep 1.5
+    echo "$saved_tabs" | tail -n +2 | while IFS= read -r url; do
+      [[ -z "$url" ]] && continue
+      floorp --new-tab "$url" &
+      sleep 0.15
+    done
+
+    local floorp_wid=""
+    local deadline=$((SECONDS + 8))
+    while (( SECONDS < deadline )); do
+      local after_floorp
+      after_floorp=$(wmctrl -l | awk '/Ablaze Floorp/ {print $1}' | sort)
+      floorp_wid=$(comm -13 <(echo "$before_floorp") <(echo "$after_floorp") | head -1)
+      [[ -n "$floorp_wid" ]] && break
+      sleep 0.3
+    done
+
+    if [[ -n "$floorp_wid" ]]; then
+      kwin_move_to_desktop "$floorp_wid" "$idx"
+      wmctrl -i -a "$floorp_wid"
+      sleep 0.3
+      qdbus org.kde.kglobalaccel /component/kwin \
+        org.kde.kglobalaccel.Component.invokeShortcut "Window Quick Tile Left"
+      echo "  Restored on desktop '$name'"
+      (( restored++ ))
+    else
+      echo "  Warning: Floorp window not detected for '$name'" >&2
+    fi
+  done <<< "$desktops"
+
+  echo "Done: restored Floorp on $restored desktops"
+}
+
 case "${1:-help}" in
-  create)           shift; cmd_create "$@" ;;
-  save)             shift; cmd_save "$@" ;;
-  close)            shift; cmd_close "$@" ;;
-  pin)              cmd_pin ;;
-  list)             cmd_list ;;
-  menu)             cmd_menu ;;
-  handle-response)  shift; cmd_handle_response "$@" ;;
+  create)             shift; cmd_create "$@" ;;
+  save)               shift; cmd_save "$@" ;;
+  save-all)           cmd_save_all ;;
+  close)              shift; cmd_close "$@" ;;
+  pin)                cmd_pin ;;
+  list)               cmd_list ;;
+  menu)               cmd_menu ;;
+  restore-browsers)   cmd_restore_browsers ;;
+  handle-response)    shift; cmd_handle_response "$@" ;;
   help|*)
     echo "Usage:"
     echo "  workspace create <path> [name]           — create or switch to workspace"
     echo "  workspace save [name]                    — save Floorp tabs for current workspace"
+    echo "  workspace save-all                       — save Floorp tabs for all active desktops"
     echo "  workspace close [name]                   — save tabs and remove workspace"
+    echo "  workspace restore-browsers               — restore Floorp windows on desktops missing them"
     echo "  workspace pin                            — pin focused Floorp window to all desktops"
     echo "  workspace list                           — list saved workspaces"
     echo "  workspace menu                           — rofi popup to switch/create/close workspaces"
