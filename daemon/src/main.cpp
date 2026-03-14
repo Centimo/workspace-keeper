@@ -11,6 +11,7 @@
 #include "workspace_manager_dbus.h"
 
 #include <QApplication>
+#include <QSessionManager>
 #include <QDir>
 #include <QSocketNotifier>
 #include <QStandardPaths>
@@ -31,6 +32,9 @@ int main(int argc, char* argv[]) {
   QApplication app(argc, argv);
   app.setApplicationName("workspace-menu");
   app.setQuitOnLastWindowClosed(false);
+  QObject::connect(&app, &QGuiApplication::commitDataRequest, &app, [](QSessionManager& sm) {
+    sm.setRestartHint(QSessionManager::RestartNever);
+  });
 
   qCInfo(logServer, "starting (pid=%d, built " __DATE__ " " __TIME__ ")", static_cast< int>(getpid()));
 
