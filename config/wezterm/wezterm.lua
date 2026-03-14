@@ -11,7 +11,7 @@ config.unix_domains = {
 
 -- Font
 config.font = wezterm.font('Hack')
-config.font_size = 16.0
+config.font_size = 22.0
 
 -- Colors (Breeze Dark)
 config.colors = {

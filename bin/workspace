@@ -112,10 +112,24 @@ create_desktop() {
 kwin_move_to_desktop() {
   local hex_wid="$1"
   local desktop_idx="$2"
+  local snap="${3:-}"  # optional: "right_half"
   local dec_wid=$(( hex_wid ))
   local kwin_desktop=$(( desktop_idx + 1 ))
 
-  log "move wid=$hex_wid (dec=$dec_wid) to desktop=$desktop_idx (kwin=$kwin_desktop)"
+  log "move wid=$hex_wid (dec=$dec_wid) to desktop=$desktop_idx (kwin=$kwin_desktop) snap=$snap"
+
+  local snap_js=""
+  if [[ "$snap" == "right_half" ]]; then
+    snap_js="
+      var area = workspace.clientArea(0 /*PlacementArea*/, client.screen, client.desktop);
+      var half_width = Math.floor(area.width / 2);
+      client.geometry = {
+        x: area.x + half_width,
+        y: area.y,
+        width: half_width,
+        height: area.height
+      };"
+  fi
 
   local script
   script=$(mktemp /tmp/kwin-move-XXXXXXXX.js)
@@ -124,6 +138,7 @@ kwin_move_to_desktop() {
   function moveWindow(client) {
     if (client.windowId === ${dec_wid}) {
       client.desktop = ${kwin_desktop};
+      ${snap_js}
       return true;
     }
     return false;
@@ -254,6 +269,11 @@ find_floorp_on_desktop() {
   wmctrl -l | awk -v d="$desktop_idx" '$2 == d && /Ablaze Floorp/ {print $1; exit}'
 }
 
+find_wezterm_on_desktop() {
+  local desktop_idx="$1"
+  wmctrl -lx | awk -v d="$desktop_idx" '$2 == d && $3 ~ /org\.wezfurlong\.wezterm/ {print $1; exit}'
+}
+
 # Wait for a new window to appear (by diffing wmctrl -l).
 # $1 — sorted list of window IDs before launch
 # $2 — timeout in seconds
@@ -379,7 +399,7 @@ cmd_create() {
   wez_wid=$(wait_for_new_window "$before_wez" 8 "" "org.wezfurlong.wezterm") || true
   if [[ -n "$wez_wid" ]]; then
     log "detected WezTerm window $wez_wid"
-    kwin_move_to_desktop "$wez_wid" "$desktop_idx"
+    kwin_move_to_desktop "$wez_wid" "$desktop_idx" "right_half"
   else
     log "WezTerm window not detected"
     echo "Warning: WezTerm window not detected" >&2
@@ -544,6 +564,16 @@ cmd_close() {
     while IFS= read -r pane_id; do
       wezterm cli kill-pane --pane-id "$pane_id" 2>/dev/null || true
     done <<< "$pane_ids"
+  fi
+
+  # Close WezTerm GUI window on this desktop (fallback: kill-pane may not close it
+  # if the window was created in a different mux workspace).
+  if [[ -n "$desktop_idx" ]]; then
+    local wez_wid
+    wez_wid=$(find_wezterm_on_desktop "$desktop_idx")
+    if [[ -n "$wez_wid" ]]; then
+      wmctrl -i -c "$wez_wid"
+    fi
   fi
 
   local desktop_id
