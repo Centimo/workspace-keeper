@@ -147,7 +147,10 @@ mkdir -p "$HOME/.local/bin"
 # Stop daemon before overwriting binary (otherwise cp fails with "Text file busy")
 if pkill -x workspace-menu 2>/dev/null; then
   echo "  Stopped old daemon"
-  sleep 0.5
+  deadline=$((SECONDS + 5))
+  while pgrep -x workspace-menu > /dev/null && (( SECONDS < deadline )); do
+    sleep 0.1
+  done
 fi
 
 cp "$BUILD_DIR/workspace-menu" "$HOME/.local/bin/workspace-menu"
