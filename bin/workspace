@@ -119,12 +119,21 @@ kwin_move_to_desktop() {
   log "move wid=$hex_wid (dec=$dec_wid) to desktop=$desktop_idx (kwin=$kwin_desktop) snap=$snap"
 
   local snap_js=""
-  if [[ "$snap" == "right_half" ]]; then
+  local snap_x_offset="0"
+  if [[ "$snap" == "right_half" ]]; then snap_x_offset="half_width"; fi
+
+  if [[ "$snap" == "right_half" || "$snap" == "left_half" ]]; then
     snap_js="
-      var area = workspace.clientArea(0 /*PlacementArea*/, client.screen, client.desktop);
+      // Find leftmost screen (x == 0) — physically left monitor
+      var target_screen = 0;
+      for (var s = 0; s < workspace.numScreens; s++) {
+        var r = workspace.clientArea(0 /*PlacementArea*/, s, client.desktop);
+        if (r.x === 0) { target_screen = s; break; }
+      }
+      var area = workspace.clientArea(0 /*PlacementArea*/, target_screen, client.desktop);
       var half_width = Math.floor(area.width / 2);
       client.geometry = {
-        x: area.x + half_width,
+        x: area.x + ${snap_x_offset},
         y: area.y,
         width: half_width,
         height: area.height
@@ -458,12 +467,7 @@ cmd_create() {
   done
   if [[ -n "$floorp_wid" ]]; then
     log "detected Floorp window $floorp_wid"
-    kwin_move_to_desktop "$floorp_wid" "$desktop_idx"
-    # Tile to left half via KWin Quick Tile (like Meta+Left)
-    wmctrl -i -a "$floorp_wid"
-    sleep 0.3
-    qdbus org.kde.kglobalaccel /component/kwin \
-      org.kde.kglobalaccel.Component.invokeShortcut "Window Quick Tile Left"
+    kwin_move_to_desktop "$floorp_wid" "$desktop_idx" "left_half"
   else
     log "Floorp window not detected"
     echo "Warning: Floorp window not detected" >&2
