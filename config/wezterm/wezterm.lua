@@ -72,6 +72,9 @@ config.colors = {
   },
 }
 
+-- Renderer (OpenGL faster than WebGpu on KWin Wayland)
+config.front_end = 'OpenGL'
+
 -- Opacity
 config.window_background_opacity = 0.93
 
