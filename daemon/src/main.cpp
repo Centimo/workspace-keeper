@@ -103,7 +103,7 @@ int main(int argc, char* argv[]) {
   Global_shortcut shortcut(
     "show-workspace-menu",
     "Show Workspace Menu",
-    Qt::ALT | Qt::Key_Tab
+    QKeySequence(static_cast< int>(Qt::AltModifier) | static_cast< int>(Qt::Key_Tab))
   );
   QObject::connect(&shortcut, &Global_shortcut::triggered,
     &server, &Daemon_server::trigger_from_shortcut);
@@ -113,7 +113,7 @@ int main(int argc, char* argv[]) {
     auto* sc = new Global_shortcut(
       QString("switch-desktop-%1").arg(i + 1),
       QString("Switch to Desktop %1").arg(i + 1),
-      Qt::ALT | static_cast< Qt::Key>(Qt::Key_F1 + i),
+      QKeySequence(static_cast< int>(Qt::AltModifier) | (Qt::Key_F1 + i)),
       &app
     );
 
