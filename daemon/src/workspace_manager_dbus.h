@@ -22,6 +22,7 @@ class Workspace_manager_dbus : public QDBusAbstractAdaptor {
   QString ListWorkspaces();
   void SetTabs(const QString& workspace_name, const QString& urls);
   QString GetTabs(const QString& workspace_name);
+  void ReportWeztermTabs(const QString& workspace_name, const QString& tabs_json);
 
  private:
   Workspace_db& _db;

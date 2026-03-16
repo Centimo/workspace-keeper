@@ -110,6 +110,21 @@ void Workspace_db::create_tables() {
       qPrintable(query.lastError().text()));
   }
 
+  if (!query.exec(
+    "CREATE TABLE IF NOT EXISTS wezterm_tab ("
+    "  workspace_name TEXT NOT NULL REFERENCES workspace(name) ON DELETE CASCADE,"
+    "  tab_index      INTEGER NOT NULL,"
+    "  tab_id         INTEGER NOT NULL,"
+    "  pane_id        INTEGER NOT NULL,"
+    "  cwd            TEXT,"
+    "  title          TEXT,"
+    "  PRIMARY KEY (workspace_name, tab_index)"
+    ")"
+  )) {
+    qCCritical(logServer, "failed to create wezterm_tab table: %s",
+      qPrintable(query.lastError().text()));
+  }
+
   // Migration: add sort_order column
   query.exec("ALTER TABLE workspace ADD COLUMN sort_order INTEGER");
   // Ignore error — column may already exist
@@ -388,6 +403,104 @@ QStringList Workspace_db::get_tabs(const QString& workspace_name) const {
   if (query.exec()) {
     while (query.next()) {
       result.append(query.value(0).toString());
+    }
+  }
+  return result;
+}
+
+// --- WezTerm tabs ---
+
+void Workspace_db::set_wezterm_tabs(
+  const QString& workspace_name,
+  const QVector< Wezterm_tab_info>& tabs
+) {
+  ensure_workspace_exists(workspace_name);
+
+  _db.transaction();
+
+  QSqlQuery del(_db);
+  del.prepare("DELETE FROM wezterm_tab WHERE workspace_name = ?");
+  del.addBindValue(workspace_name);
+  if (!del.exec()) {
+    qCWarning(logServer, "set_wezterm_tabs: failed to delete tabs for '%s': %s",
+      qPrintable(workspace_name), qPrintable(del.lastError().text()));
+    _db.rollback();
+    return;
+  }
+
+  QSqlQuery insert(_db);
+  insert.prepare(
+    "INSERT INTO wezterm_tab (workspace_name, tab_index, tab_id, pane_id, cwd, title)"
+    " VALUES (?, ?, ?, ?, ?, ?)"
+  );
+
+  bool ok = true;
+  for (const auto& tab : tabs) {
+    insert.addBindValue(workspace_name);
+    insert.addBindValue(tab.tab_index);
+    insert.addBindValue(tab.tab_id);
+    insert.addBindValue(tab.pane_id);
+    insert.addBindValue(tab.cwd.isEmpty() ? QVariant() : tab.cwd);
+    insert.addBindValue(tab.title.isEmpty() ? QVariant() : tab.title);
+    if (!insert.exec()) {
+      qCWarning(logServer, "set_wezterm_tabs: failed to insert tab %d for '%s': %s",
+        tab.tab_index, qPrintable(workspace_name), qPrintable(insert.lastError().text()));
+      ok = false;
+      break;
+    }
+  }
+
+  if (!ok) {
+    _db.rollback();
+    return;
+  }
+
+  _db.commit();
+}
+
+QJsonArray Workspace_db::get_wezterm_tabs(const QString& workspace_name) const {
+  QJsonArray result;
+  QSqlQuery query(_db);
+  query.prepare(
+    "SELECT tab_index, tab_id, pane_id, cwd, title"
+    " FROM wezterm_tab"
+    " WHERE workspace_name = ?"
+    " ORDER BY tab_index"
+  );
+  query.addBindValue(workspace_name);
+
+  if (query.exec()) {
+    while (query.next()) {
+      QJsonObject obj;
+      obj["tab_index"] = query.value(0).toInt();
+      obj["tab_id"]    = query.value(1).toInt();
+      obj["pane_id"]   = query.value(2).toInt();
+      obj["cwd"]       = query.value(3).toString();
+      obj["title"]     = query.value(4).toString();
+      result.append(obj);
+    }
+  }
+  return result;
+}
+
+QJsonArray Workspace_db::all_wezterm_tabs() const {
+  QJsonArray result;
+  QSqlQuery query(_db);
+
+  if (query.exec(
+    "SELECT workspace_name, tab_index, tab_id, pane_id, cwd, title"
+    " FROM wezterm_tab"
+    " ORDER BY workspace_name, tab_index"
+  )) {
+    while (query.next()) {
+      QJsonObject obj;
+      obj["workspace_name"] = query.value(0).toString();
+      obj["tab_index"]      = query.value(1).toInt();
+      obj["tab_id"]         = query.value(2).toInt();
+      obj["pane_id"]        = query.value(3).toInt();
+      obj["cwd"]            = query.value(4).toString();
+      obj["title"]          = query.value(5).toString();
+      result.append(obj);
     }
   }
   return result;

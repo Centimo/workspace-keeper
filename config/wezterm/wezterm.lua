@@ -154,4 +154,45 @@ wezterm.on('open-uri', function(window, pane, uri)
   return false
 end)
 
+-- WezTerm tab tracking: notify daemon via D-Bus on tab changes
+local previous_tab_fingerprints = {}
+
+wezterm.on('update-status', function(window, _pane)
+  local mux_win = window:mux_window()
+  local workspace = mux_win:get_workspace()
+  local tabs = mux_win:tabs()
+
+  local tab_data = {}
+  local parts = {}
+  for i, tab in ipairs(tabs) do
+    local active_pane = tab:active_pane()
+    local cwd_uri = active_pane:get_current_working_dir()
+    local cwd = (cwd_uri and cwd_uri.file_path) or ''
+    local title = active_pane:get_title()
+    local tab_id = tab:tab_id()
+    local pane_id = active_pane:pane_id()
+
+    table.insert(tab_data, {
+      tab_index = i - 1,
+      tab_id    = tab_id,
+      pane_id   = pane_id,
+      cwd       = cwd,
+      title     = title,
+    })
+    table.insert(parts, tab_id .. ':' .. pane_id .. ':' .. cwd .. ':' .. title)
+  end
+
+  local fingerprint = table.concat(parts, '|')
+  if previous_tab_fingerprints[workspace] == fingerprint then
+    return
+  end
+  previous_tab_fingerprints[workspace] = fingerprint
+
+  local json = wezterm.json_encode(tab_data)
+  wezterm.background_child_process({
+    'qdbus', 'org.workspace.Manager', '/Manager',
+    'ReportWeztermTabs', workspace, json,
+  })
+end)
+
 return config

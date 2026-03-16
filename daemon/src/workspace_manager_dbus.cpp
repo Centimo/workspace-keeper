@@ -4,7 +4,9 @@
 
 #include <QDBusConnection>
 #include <QDBusError>
+#include <QJsonArray>
 #include <QJsonDocument>
+#include <QJsonObject>
 
 Workspace_manager_dbus::Workspace_manager_dbus(Workspace_db& db, QObject* parent)
   : QDBusAbstractAdaptor(parent)
@@ -51,4 +53,32 @@ void Workspace_manager_dbus::SetTabs(const QString& workspace_name, const QStrin
 
 QString Workspace_manager_dbus::GetTabs(const QString& workspace_name) {
   return _db.get_tabs(workspace_name).join('\n');
+}
+
+void Workspace_manager_dbus::ReportWeztermTabs(
+  const QString& workspace_name,
+  const QString& tabs_json
+) {
+  auto doc = QJsonDocument::fromJson(tabs_json.toUtf8());
+  if (!doc.isArray()) {
+    qCWarning(logServer, "ReportWeztermTabs: invalid JSON for workspace '%s'",
+      qPrintable(workspace_name));
+    return;
+  }
+
+  QVector< Wezterm_tab_info> tabs;
+  for (const auto& val : doc.array()) {
+    auto obj = val.toObject();
+    tabs.append({
+      obj["tab_index"].toInt(),
+      obj["tab_id"].toInt(),
+      obj["pane_id"].toInt(),
+      obj["cwd"].toString(),
+      obj["title"].toString()
+    });
+  }
+
+  _db.set_wezterm_tabs(workspace_name, tabs);
+  qCInfo(logServer, "ReportWeztermTabs: saved %d tabs for workspace '%s'",
+    tabs.size(), qPrintable(workspace_name));
 }

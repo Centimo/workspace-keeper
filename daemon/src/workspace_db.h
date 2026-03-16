@@ -21,6 +21,14 @@ struct Workspace_info {
   QString project_dir;
 };
 
+struct Wezterm_tab_info {
+  int tab_index;  // 0-based порядок вкладок в mux workspace
+  int tab_id;     // WezTerm tab ID
+  int pane_id;    // active pane ID
+  QString cwd;    // рабочий каталог active pane
+  QString title;  // display title active pane
+};
+
 /// Single point of access to the SQLite database.
 /// All SQL is encapsulated here — the rest of the codebase uses only
 /// the public methods of this class.
@@ -67,6 +75,12 @@ class Workspace_db {
 
   void set_tabs(const QString& workspace_name, const QStringList& urls);
   QStringList get_tabs(const QString& workspace_name) const;
+
+  // --- WezTerm tabs ---
+
+  void set_wezterm_tabs(const QString& workspace_name, const QVector< Wezterm_tab_info>& tabs);
+  QJsonArray get_wezterm_tabs(const QString& workspace_name) const;
+  QJsonArray all_wezterm_tabs() const;
 
   // --- Claude status ---
 
