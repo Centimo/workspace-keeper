@@ -158,21 +158,11 @@ end)
 -- We identify the GUI window by its PID so the daemon can map it to an X11
 -- window and find its KDE desktop via _NET_WM_DESKTOP.
 local gui_pid = (function()
-  -- Try io.open first (available in some wezterm builds)
   local f = io.open('/proc/self/status', 'r')
-  if f then
-    local content = f:read('*a')
-    f:close()
-    local pid = content:match('Pid:%s*(%d+)')
-    if pid then return pid end
-  end
-  -- Fallback: run_child_process reads /proc/self from inside wezterm-gui process
-  local ok, stdout, _ = wezterm.run_child_process({ 'cat', '/proc/self/status' })
-  if ok and stdout then
-    local pid = stdout:match('Pid:%s*(%d+)')
-    if pid then return pid end
-  end
-  return ''
+  if not f then return '' end
+  local content = f:read('*a')
+  f:close()
+  return content:match('Pid:%s*(%d+)') or ''
 end)()
 
 local previous_tab_fingerprints = {}  -- key: wezterm window_id
