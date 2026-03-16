@@ -154,13 +154,32 @@ wezterm.on('open-uri', function(window, pane, uri)
   return false
 end)
 
--- WezTerm tab tracking: notify daemon via D-Bus on tab changes
-local previous_tab_fingerprints = {}
+-- WezTerm tab tracking: notify daemon via D-Bus on tab changes.
+-- We identify the GUI window by its PID so the daemon can map it to an X11
+-- window and find its KDE desktop via _NET_WM_DESKTOP.
+local gui_pid = (function()
+  -- Try io.open first (available in some wezterm builds)
+  local f = io.open('/proc/self/status', 'r')
+  if f then
+    local content = f:read('*a')
+    f:close()
+    local pid = content:match('Pid:%s*(%d+)')
+    if pid then return pid end
+  end
+  -- Fallback: run_child_process reads /proc/self from inside wezterm-gui process
+  local ok, stdout, _ = wezterm.run_child_process({ 'cat', '/proc/self/status' })
+  if ok and stdout then
+    local pid = stdout:match('Pid:%s*(%d+)')
+    if pid then return pid end
+  end
+  return ''
+end)()
+
+local previous_tab_fingerprints = {}  -- key: wezterm window_id
 
 wezterm.on('update-status', function(window, _pane)
-  local mux_win = window:mux_window()
-  local workspace = mux_win:get_workspace()
-  local tabs = mux_win:tabs()
+  local wezterm_window_id = window:window_id()
+  local tabs = window:mux_window():tabs()
 
   local tab_data = {}
   local parts = {}
@@ -183,15 +202,15 @@ wezterm.on('update-status', function(window, _pane)
   end
 
   local fingerprint = table.concat(parts, '|')
-  if previous_tab_fingerprints[workspace] == fingerprint then
+  if previous_tab_fingerprints[wezterm_window_id] == fingerprint then
     return
   end
-  previous_tab_fingerprints[workspace] = fingerprint
+  previous_tab_fingerprints[wezterm_window_id] = fingerprint
 
   local json = wezterm.json_encode(tab_data)
   wezterm.background_child_process({
     'qdbus', 'org.workspace.Manager', '/Manager',
-    'ReportWeztermTabs', workspace, json,
+    'ReportWeztermTabs', gui_pid, tostring(wezterm_window_id), json,
   })
 end)
 

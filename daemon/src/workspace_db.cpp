@@ -346,6 +346,19 @@ QVector< Workspace_info> Workspace_db::saved_workspaces() const {
   return result;
 }
 
+QString Workspace_db::workspace_name_by_desktop_index(int desktop_index) const {
+  QSqlQuery query(_db);
+  query.prepare(
+    "SELECT name FROM workspace WHERE is_active = 1 AND desktop_index = ?"
+  );
+  query.addBindValue(desktop_index);
+
+  if (query.exec() && query.next()) {
+    return query.value(0).toString();
+  }
+  return {};
+}
+
 // --- Tabs ---
 
 void Workspace_db::set_tabs(const QString& workspace_name, const QStringList& urls) {

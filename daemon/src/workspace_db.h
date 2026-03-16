@@ -71,6 +71,9 @@ class Workspace_db {
   /// sorted order (0-based). Empty string if position is out of range.
   QString active_desktop_name_at(int position) const;
 
+  /// @return workspace name for the given KDE desktop index, empty if not found.
+  QString workspace_name_by_desktop_index(int desktop_index) const;
+
   // --- Tabs ---
 
   void set_tabs(const QString& workspace_name, const QStringList& urls);
