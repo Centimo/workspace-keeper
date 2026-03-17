@@ -56,6 +56,7 @@ fi
 # --- Symlink configs ---
 link config/wezterm/wezterm.lua          "$HOME/.wezterm.lua"
 link bin/workspace                       "$HOME/.local/bin/workspace"
+link scripts/wezterm-open.sh             "$HOME/.local/bin/wezterm-open"
 link config/kde/kwinrulesrc              "$HOME/.config/kwinrulesrc"
 link config/kde/workspace-menu.desktop   "$HOME/.local/share/applications/workspace-menu.desktop"
 link config/autostart/org.wezfurlong.wezterm.desktop "$HOME/.config/autostart/org.wezfurlong.wezterm.desktop"
@@ -63,6 +64,7 @@ link config/autostart/org.wezfurlong.wezterm.desktop "$HOME/.config/autostart/or
 # --- Generated files (need __HOME__ substitution) ---
 generate config/floorp/brotab_mediator.json "$HOME/.floorp/native-messaging-hosts/brotab_mediator.json"
 generate config/kde/workspace-menu-daemon.desktop "$HOME/.config/autostart/workspace-menu-daemon.desktop"
+generate config/kde/org.wezfurlong.wezterm.desktop "$HOME/.local/share/applications/org.wezfurlong.wezterm.desktop"
 
 chmod +x "$HOME/.local/bin/workspace"
 
