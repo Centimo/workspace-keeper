@@ -82,16 +82,11 @@ static int find_desktop_for_pid(int pid) {
     if (!ok || window_pid != pid)
       continue;
 
-    // Read _NET_WM_DESKTOP for this X11 window
-    QProcess xprop;
-    xprop.start("xprop", {"-id", parts[0], "_NET_WM_DESKTOP"});
-    if (!xprop.waitForFinished(1000))
+    bool ok2 = false;
+    int desktop = parts[1].toInt(&ok2);
+    if (!ok2 || desktop < 0)
       continue;
-    auto xprop_out = QString::fromUtf8(xprop.readAllStandardOutput());
-    auto match = QRegularExpression("= (\\d+)").match(xprop_out);
-    if (!match.hasMatch())
-      continue;
-    return match.captured(1).toInt();
+    return desktop;
   }
   return -1;
 }
