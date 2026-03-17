@@ -24,9 +24,10 @@ class Status_overlay : public QWidget {
     QWidget* parent = nullptr
   );
 
-  /// Update status for a single workspace.
+  /// Update status for a single pane; overlay aggregates per-workspace for display.
   void on_status_changed(
     const QString& workspace,
+    int pane_id,
     Claude_state state,
     const QString& tool_name,
     const QString& wait_reason,
@@ -81,7 +82,8 @@ class Status_overlay : public QWidget {
   Workspace_db& _db;
 
   QVector< Cell_info> _cells;
-  QHash< QString, Claude_workspace_status> _claude_statuses;
+  // workspace_name -> pane_id -> status
+  QHash< QString, QHash< int, Claude_tab_status>> _claude_tab_statuses;
 
   bool _edit_mode = false;
 

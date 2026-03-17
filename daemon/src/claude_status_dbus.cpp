@@ -41,11 +41,12 @@ QString Claude_status_dbus::GetAllStatuses() {
   auto statuses = _tracker.all_statuses();
   for (const auto& status : statuses) {
     QJsonObject obj;
-    obj["name"] = status.workspace_name;
-    obj["state"] = to_wire_string(status.state);
-    obj["tool_name"] = status.tool_name;
-    obj["wait_reason"] = status.wait_reason;
-    obj["wait_message"] = status.wait_message;
+    obj["workspace_name"] = status.workspace_name;
+    obj["pane_id"]        = status.pane_id;
+    obj["state"]          = to_wire_string(status.state);
+    obj["tool_name"]      = status.tool_name;
+    obj["wait_reason"]    = status.wait_reason;
+    obj["wait_message"]   = status.wait_message;
     obj["state_since_ms"] = status.state_since_ms;
     array.append(obj);
   }
@@ -56,14 +57,16 @@ QString Claude_status_dbus::GetAllStatuses() {
 void Claude_status_dbus::ReportClaudeEvent(
   const QString& workspace,
   const QString& event_type,
-  const QString& args_tsv
+  const QString& args_tsv,
+  int pane_id
 ) {
-  auto args = args_tsv.split('\t');
-  _tracker.process_event(workspace, event_type, args);
+  auto args = args_tsv.isEmpty() ? QStringList{} : args_tsv.split('\t');
+  _tracker.process_event(workspace, event_type, args, pane_id);
 }
 
 void Claude_status_dbus::on_status_changed(
   const QString& workspace,
+  int pane_id,
   Claude_state state,
   const QString& tool_name,
   const QString& wait_reason,
@@ -71,10 +74,10 @@ void Claude_status_dbus::on_status_changed(
   qint64 state_since_ms
 ) {
   QVariantMap status;
-  status["state"] = to_wire_string(state);
-  status["tool_name"] = tool_name;
-  status["wait_reason"] = wait_reason;
-  status["wait_message"] = wait_message;
+  status["state"]         = to_wire_string(state);
+  status["tool_name"]     = tool_name;
+  status["wait_reason"]   = wait_reason;
+  status["wait_message"]  = wait_message;
   status["state_since_ms"] = state_since_ms;
-  emit StatusChanged(workspace, status);
+  emit StatusChanged(workspace, pane_id, status);
 }

@@ -85,18 +85,22 @@ void Workspace_db::create_tables() {
       qPrintable(query.lastError().text()));
   }
 
+  query.exec("DROP TABLE IF EXISTS claude_session");
+
   if (!query.exec(
-    "CREATE TABLE IF NOT EXISTS claude_session ("
-    "  workspace_name TEXT PRIMARY KEY REFERENCES workspace(name),"
-    "  session_id TEXT,"
-    "  state TEXT NOT NULL DEFAULT 'not_running',"
-    "  tool_name TEXT,"
-    "  wait_reason TEXT,"
-    "  wait_message TEXT,"
-    "  state_since_ms INTEGER NOT NULL DEFAULT 0"
+    "CREATE TABLE IF NOT EXISTS claude_tab_session ("
+    "  workspace_name TEXT NOT NULL REFERENCES workspace(name),"
+    "  pane_id        INTEGER NOT NULL,"
+    "  session_id     TEXT,"
+    "  state          TEXT NOT NULL DEFAULT 'not_running',"
+    "  tool_name      TEXT,"
+    "  wait_reason    TEXT,"
+    "  wait_message   TEXT,"
+    "  state_since_ms INTEGER NOT NULL DEFAULT 0,"
+    "  PRIMARY KEY (workspace_name, pane_id)"
     ")"
   )) {
-    qCCritical(logServer, "failed to create claude_session table: %s",
+    qCCritical(logServer, "failed to create claude_tab_session table: %s",
       qPrintable(query.lastError().text()));
   }
 
@@ -519,10 +523,11 @@ QJsonArray Workspace_db::all_wezterm_tabs() const {
   return result;
 }
 
-// --- Claude status ---
+// --- Claude tab status ---
 
-qint64 Workspace_db::set_claude_state(
+qint64 Workspace_db::set_claude_tab_state(
   const QString& workspace,
+  int pane_id,
   Claude_state state,
   const QString& tool_name,
   const QString& wait_reason,
@@ -534,9 +539,9 @@ qint64 Workspace_db::set_claude_state(
 
   QSqlQuery query(_db);
   query.prepare(
-    "INSERT INTO claude_session (workspace_name, state, tool_name, wait_reason, wait_message, state_since_ms)"
-    " VALUES (?, ?, ?, ?, ?, ?)"
-    " ON CONFLICT(workspace_name) DO UPDATE SET"
+    "INSERT INTO claude_tab_session (workspace_name, pane_id, state, tool_name, wait_reason, wait_message, state_since_ms)"
+    " VALUES (?, ?, ?, ?, ?, ?, ?)"
+    " ON CONFLICT(workspace_name, pane_id) DO UPDATE SET"
     "   state = excluded.state,"
     "   tool_name = excluded.tool_name,"
     "   wait_reason = excluded.wait_reason,"
@@ -544,6 +549,7 @@ qint64 Workspace_db::set_claude_state(
     "   state_since_ms = excluded.state_since_ms"
   );
   query.addBindValue(workspace);
+  query.addBindValue(pane_id);
   query.addBindValue(to_wire_string(state));
   query.addBindValue(tool_name.isEmpty() ? QVariant() : tool_name);
   query.addBindValue(wait_reason.isEmpty() ? QVariant() : wait_reason);
@@ -551,24 +557,26 @@ qint64 Workspace_db::set_claude_state(
   query.addBindValue(now);
 
   if (!query.exec()) {
-    qCWarning(logClaude, "set_claude_state: failed for '%s': %s",
-      qPrintable(workspace), qPrintable(query.lastError().text()));
+    qCWarning(logClaude, "set_claude_tab_state: failed for '%s' pane=%d: %s",
+      qPrintable(workspace), pane_id, qPrintable(query.lastError().text()));
     return -1;
   }
 
   return now;
 }
 
-qint64 Workspace_db::start_claude_session(const QString& workspace, const QString& session_id) {
+qint64 Workspace_db::start_claude_tab_session(
+  const QString& workspace, int pane_id, const QString& session_id
+) {
   ensure_workspace_exists(workspace);
 
   auto now = QDateTime::currentMSecsSinceEpoch();
 
   QSqlQuery query(_db);
   query.prepare(
-    "INSERT INTO claude_session (workspace_name, session_id, state, state_since_ms)"
-    " VALUES (?, ?, 'idle', ?)"
-    " ON CONFLICT(workspace_name) DO UPDATE SET"
+    "INSERT INTO claude_tab_session (workspace_name, pane_id, session_id, state, state_since_ms)"
+    " VALUES (?, ?, ?, 'idle', ?)"
+    " ON CONFLICT(workspace_name, pane_id) DO UPDATE SET"
     "   session_id = excluded.session_id,"
     "   state = 'idle',"
     "   tool_name = NULL,"
@@ -577,88 +585,99 @@ qint64 Workspace_db::start_claude_session(const QString& workspace, const QStrin
     "   state_since_ms = excluded.state_since_ms"
   );
   query.addBindValue(workspace);
+  query.addBindValue(pane_id);
   query.addBindValue(session_id);
   query.addBindValue(now);
 
   if (!query.exec()) {
-    qCWarning(logClaude, "start_claude_session: failed for '%s': %s",
-      qPrintable(workspace), qPrintable(query.lastError().text()));
+    qCWarning(logClaude, "start_claude_tab_session: failed for '%s' pane=%d: %s",
+      qPrintable(workspace), pane_id, qPrintable(query.lastError().text()));
     return -1;
   }
 
   return now;
 }
 
-qint64 Workspace_db::end_claude_session(const QString& workspace) {
+qint64 Workspace_db::end_claude_tab_session(const QString& workspace, int pane_id) {
   auto now = QDateTime::currentMSecsSinceEpoch();
 
   QSqlQuery query(_db);
   query.prepare(
-    "UPDATE claude_session SET"
+    "UPDATE claude_tab_session SET"
     "  session_id = NULL,"
     "  state = 'not_running',"
     "  tool_name = NULL,"
     "  wait_reason = NULL,"
     "  wait_message = NULL,"
     "  state_since_ms = ?"
-    " WHERE workspace_name = ?"
+    " WHERE workspace_name = ? AND pane_id = ?"
   );
   query.addBindValue(now);
   query.addBindValue(workspace);
+  query.addBindValue(pane_id);
 
   if (!query.exec()) {
-    qCWarning(logClaude, "end_claude_session: failed for '%s': %s",
-      qPrintable(workspace), qPrintable(query.lastError().text()));
+    qCWarning(logClaude, "end_claude_tab_session: failed for '%s' pane=%d: %s",
+      qPrintable(workspace), pane_id, qPrintable(query.lastError().text()));
+    return -1;
+  }
+
+  if (query.numRowsAffected() == 0) {
     return -1;
   }
 
   return now;
 }
 
-QVector< Claude_workspace_status> Workspace_db::all_claude_statuses() const {
-  QVector< Claude_workspace_status> result;
+QVector< Claude_tab_status> Workspace_db::all_claude_tab_statuses() const {
+  QVector< Claude_tab_status> result;
   QSqlQuery query(_db);
 
   if (query.exec(
-    "SELECT workspace_name, session_id, state, tool_name,"
+    "SELECT workspace_name, pane_id, session_id, state, tool_name,"
     " wait_reason, wait_message, state_since_ms"
-    " FROM claude_session"
+    " FROM claude_tab_session"
     " WHERE state != 'not_running'"
   )) {
     while (query.next()) {
-      Claude_workspace_status status;
+      Claude_tab_status status;
       status.workspace_name = query.value(0).toString();
-      status.session_id     = query.value(1).toString();
-      status.state          = parse_state(query.value(2).toString());
-      status.tool_name      = query.value(3).toString();
-      status.wait_reason    = query.value(4).toString();
-      status.wait_message   = query.value(5).toString();
-      status.state_since_ms = query.value(6).toLongLong();
+      status.pane_id        = query.value(1).toInt();
+      status.session_id     = query.value(2).toString();
+      status.state          = parse_state(query.value(3).toString());
+      status.tool_name      = query.value(4).toString();
+      status.wait_reason    = query.value(5).toString();
+      status.wait_message   = query.value(6).toString();
+      status.state_since_ms = query.value(7).toLongLong();
       result.append(status);
     }
   }
   return result;
 }
 
-std::optional< Claude_workspace_status> Workspace_db::claude_status(const QString& workspace) const {
+std::optional< Claude_tab_status> Workspace_db::claude_tab_status(
+  const QString& workspace, int pane_id
+) const {
   QSqlQuery query(_db);
   query.prepare(
-    "SELECT workspace_name, session_id, state, tool_name,"
+    "SELECT workspace_name, pane_id, session_id, state, tool_name,"
     " wait_reason, wait_message, state_since_ms"
-    " FROM claude_session"
-    " WHERE workspace_name = ?"
+    " FROM claude_tab_session"
+    " WHERE workspace_name = ? AND pane_id = ?"
   );
   query.addBindValue(workspace);
+  query.addBindValue(pane_id);
 
   if (query.exec() && query.next()) {
-    Claude_workspace_status status;
+    Claude_tab_status status;
     status.workspace_name = query.value(0).toString();
-    status.session_id     = query.value(1).toString();
-    status.state          = parse_state(query.value(2).toString());
-    status.tool_name      = query.value(3).toString();
-    status.wait_reason    = query.value(4).toString();
-    status.wait_message   = query.value(5).toString();
-    status.state_since_ms = query.value(6).toLongLong();
+    status.pane_id        = query.value(1).toInt();
+    status.session_id     = query.value(2).toString();
+    status.state          = parse_state(query.value(3).toString());
+    status.tool_name      = query.value(4).toString();
+    status.wait_reason    = query.value(5).toString();
+    status.wait_message   = query.value(6).toString();
+    status.state_since_ms = query.value(7).toLongLong();
     return status;
   }
   return std::nullopt;

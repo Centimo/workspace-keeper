@@ -56,9 +56,8 @@ int main(int argc, char* argv[]) {
   db.migrate_from_config_dir(config_dir);
 
   Desktop_monitor desktop_monitor;
-  Menu_window window(db, desktop_monitor);
-
   Claude_status_tracker claude_tracker(db);
+  Menu_window window(db, desktop_monitor, claude_tracker);
   // Allocated on heap: QDBusAbstractAdaptor re-parents itself to its parent QObject,
   // so Qt object tree owns its lifetime. Stack allocation would cause double-delete.
   new Claude_status_dbus(claude_tracker);
@@ -82,11 +81,13 @@ int main(int argc, char* argv[]) {
 
   QObject::connect(&claude_tracker, &Claude_status_tracker::status_changed,
     &overlay, &Status_overlay::on_status_changed);
+  QObject::connect(&claude_tracker, &Claude_status_tracker::status_changed,
+    &window, &Menu_window::on_tab_status_changed);
 
   // Load initial claude statuses into overlay
   for (const auto& status : claude_tracker.all_statuses()) {
     overlay.on_status_changed(
-      status.workspace_name, status.state,
+      status.workspace_name, status.pane_id, status.state,
       status.tool_name, status.wait_reason, status.wait_message,
       status.state_since_ms
     );

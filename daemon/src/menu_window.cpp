@@ -1,14 +1,23 @@
 #include "menu_window.h"
+#include "claude_status_tracker.h"
 #include "desktop_monitor.h"
 #include "journal_log.h"
+#include "workspace_db.h"
+
+#include <claude_types.h>
 
 #include <QApplication>
 #include <QDateTime>
+#include <QFileInfo>
+#include <QHBoxLayout>
+#include <QJsonArray>
+#include <QJsonObject>
 #include <QKeyEvent>
 #include <QLabel>
 #include <QLineEdit>
 #include <QListWidget>
 #include <QScreen>
+#include <QScrollArea>
 #include <QVBoxLayout>
 #include <QWindow>
 
@@ -73,10 +82,17 @@ static QString header_style() {
   ).arg(header_x - 1);  // -1 for list widget 1px margin
 }
 
-Menu_window::Menu_window(Workspace_db& db, Desktop_monitor& desktop_monitor, QWidget* parent)
+Menu_window::Menu_window(
+  Workspace_db& db,
+  Desktop_monitor& desktop_monitor,
+  Claude_status_tracker& claude_tracker,
+  QWidget* parent
+)
   : QWidget(parent)
   , _menu(db, desktop_monitor)
+  , _db(db)
 {
+  Q_UNUSED(claude_tracker)
   QCoreApplication::instance()->installNativeEventFilter(this);
 
   setWindowFlags(Qt::FramelessWindowHint | Qt::WindowStaysOnTopHint | Qt::Popup);
@@ -94,6 +110,20 @@ Menu_window::Menu_window(Workspace_db& db, Desktop_monitor& desktop_monitor, QWi
   auto* main_layout = new QVBoxLayout(background);
   main_layout->setContentsMargins(0, _padding, 0, _padding);
   main_layout->setSpacing(0);
+
+  // Dashboard: scrollable area with tab status grid
+  _dashboard_widget = new QWidget();
+  _dashboard_widget->setStyleSheet("background: transparent;");
+
+  _dashboard_scroll = new QScrollArea(background);
+  _dashboard_scroll->setWidget(_dashboard_widget);
+  _dashboard_scroll->setWidgetResizable(true);
+  _dashboard_scroll->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+  _dashboard_scroll->setVerticalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+  _dashboard_scroll->setFrameShape(QFrame::NoFrame);
+  _dashboard_scroll->setStyleSheet("background: transparent;");
+  _dashboard_scroll->hide();
+  main_layout->addWidget(_dashboard_scroll);
 
   // Input field with horizontal padding
   _filter_input = new QLineEdit(background);
@@ -159,6 +189,7 @@ void Menu_window::activate(qint64 client_timestamp_ms) {
   }
 
   _menu.begin_session();
+  rebuild_dashboard();
   rebuild_list();
 
   if (auto* screen = QApplication::primaryScreen()) {
@@ -324,7 +355,8 @@ void Menu_window::rebuild_list() {
   }
   _list_widget->setFixedHeight(list_height);
 
-  int total_height = _padding * 2 + _input_height + _message_bar_height + list_height + _border_width * 2;
+  int dashboard_height = _dashboard_scroll->isVisible() ? _dashboard_scroll->height() : 0;
+  int total_height = _padding * 2 + dashboard_height + _input_height + _message_bar_height + list_height + _border_width * 2;
   setFixedHeight(total_height);
 }
 
@@ -360,4 +392,144 @@ void Menu_window::update_selection() {
 
 void Menu_window::on_filter_changed(const QString& text) {
   _menu.set_filter_text(text);
+}
+
+void Menu_window::on_tab_status_changed(
+  const QString& workspace,
+  int pane_id,
+  Claude_state state,
+  const QString& tool_name,
+  const QString& wait_reason,
+  const QString& wait_message,
+  qint64 state_since_ms
+) {
+  Q_UNUSED(pane_id) Q_UNUSED(tool_name) Q_UNUSED(wait_reason)
+  Q_UNUSED(wait_message) Q_UNUSED(state_since_ms) Q_UNUSED(state)
+  Q_UNUSED(workspace)
+  if (isVisible()) {
+    rebuild_dashboard();
+  }
+}
+
+void Menu_window::rebuild_dashboard() {
+  // Load data from DB
+  auto wezterm_tabs_json = _db.all_wezterm_tabs();
+  auto claude_statuses = _db.all_claude_tab_statuses();
+
+  // Build lookup: (workspace_name, pane_id) -> Claude_tab_status
+  QHash< QString, QHash< int, Claude_tab_status>> status_map;
+  for (const auto& s : claude_statuses) {
+    status_map[s.workspace_name][s.pane_id] = s;
+  }
+
+  // Build lookup: workspace_name -> [tab_info]
+  struct Tab_info {
+    int pane_id;
+    int tab_index;
+    QString cwd;
+  };
+  QHash< QString, QVector< Tab_info>> tabs_map;
+  for (int i = 0; i < wezterm_tabs_json.size(); ++i) {
+    auto obj = wezterm_tabs_json[i].toObject();
+    auto ws = obj["workspace_name"].toString();
+    tabs_map[ws].append({
+      obj["pane_id"].toInt(),
+      obj["tab_index"].toInt(),
+      obj["cwd"].toString()
+    });
+  }
+
+  // Sort each workspace's tabs by tab_index
+  for (auto& tabs : tabs_map) {
+    std::sort(tabs.begin(), tabs.end(), [](const Tab_info& a, const Tab_info& b) {
+      return a.tab_index < b.tab_index;
+    });
+  }
+
+  // Collect active workspaces in order from DB
+  auto active_workspaces = _db.active_desktops();
+
+  // Rebuild dashboard widget
+  delete _dashboard_widget->layout();
+  // Remove all child widgets
+  for (auto* child : _dashboard_widget->findChildren< QWidget*>(QString(), Qt::FindDirectChildrenOnly)) {
+    delete child;
+  }
+
+  if (active_workspaces.isEmpty() || tabs_map.isEmpty()) {
+    _dashboard_scroll->hide();
+    return;
+  }
+
+  auto* row_layout = new QHBoxLayout(_dashboard_widget);
+  row_layout->setContentsMargins(_padding, _padding / 2, _padding, _padding / 2);
+  row_layout->setSpacing(12);
+
+  for (const auto& ws_info : active_workspaces) {
+    auto tabs_it = tabs_map.find(ws_info.name);
+    if (tabs_it == tabs_map.end() || tabs_it->isEmpty()) {
+      continue;
+    }
+
+    auto* col = new QWidget(_dashboard_widget);
+    auto* col_layout = new QVBoxLayout(col);
+    col_layout->setContentsMargins(0, 0, 0, 0);
+    col_layout->setSpacing(2);
+
+    // Workspace name header
+    auto* header = new QLabel(ws_info.name, col);
+    header->setStyleSheet("color: #7f8c8d; font-family: Hack; font-size: 12px; font-weight: bold;");
+    col_layout->addWidget(header);
+
+    // One row per tab
+    for (const auto& tab : *tabs_it) {
+      auto* tab_row = new QWidget(col);
+      auto* tab_layout = new QHBoxLayout(tab_row);
+      tab_layout->setContentsMargins(0, 0, 0, 0);
+      tab_layout->setSpacing(6);
+
+      // CWD: last path component
+      QString cwd_display = tab.cwd.isEmpty() ? "~" : QFileInfo(tab.cwd).fileName();
+      if (cwd_display.isEmpty()) {
+        cwd_display = tab.cwd;
+      }
+
+      auto* cwd_label = new QLabel(cwd_display, tab_row);
+      cwd_label->setStyleSheet("color: #fcfcfc; font-family: Hack; font-size: 13px;");
+      cwd_label->setMinimumWidth(80);
+      tab_layout->addWidget(cwd_label);
+
+      // Status indicator
+      Claude_state tab_state = Claude_state::NOT_RUNNING;
+      auto ws_status_it = status_map.find(ws_info.name);
+      if (ws_status_it != status_map.end()) {
+        auto pane_it = ws_status_it->find(tab.pane_id);
+        if (pane_it != ws_status_it->end()) {
+          tab_state = pane_it->state;
+        }
+      }
+
+      auto* state_indicator = new QLabel(QString(state_label(tab_state)), tab_row);
+      state_indicator->setFixedSize(18, 18);
+      state_indicator->setAlignment(Qt::AlignCenter);
+      state_indicator->setStyleSheet(QString(
+        "background: %1; color: %2; font-family: Hack; font-size: 11px;"
+        "font-weight: bold; border-radius: 3px;"
+      ).arg(state_color_hex(tab_state)).arg(state_text_color_hex(tab_state)));
+      tab_layout->addWidget(state_indicator);
+
+      col_layout->addWidget(tab_row);
+    }
+
+    col_layout->addStretch();
+    row_layout->addWidget(col);
+  }
+
+  row_layout->addStretch();
+
+  // Size dashboard to content
+  _dashboard_widget->adjustSize();
+  int dashboard_height = _dashboard_widget->sizeHint().height();
+  _dashboard_scroll->setFixedHeight(dashboard_height);
+  _dashboard_scroll->show();
 }

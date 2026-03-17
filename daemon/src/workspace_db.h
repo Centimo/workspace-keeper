@@ -85,25 +85,26 @@ class Workspace_db {
   QJsonArray get_wezterm_tabs(const QString& workspace_name) const;
   QJsonArray all_wezterm_tabs() const;
 
-  // --- Claude status ---
+  // --- Claude tab status ---
 
-  /// Set Claude state for a workspace. Returns the state_since_ms written to DB.
-  qint64 set_claude_state(
+  /// Set Claude state for a specific pane. Returns the state_since_ms written to DB.
+  qint64 set_claude_tab_state(
     const QString& workspace,
+    int pane_id,
     Claude_state state,
     const QString& tool_name = {},
     const QString& wait_reason = {},
     const QString& wait_message = {}
   );
 
-  /// Start a new Claude session. Returns the state_since_ms written to DB.
-  qint64 start_claude_session(const QString& workspace, const QString& session_id);
+  /// Start a new Claude session for a pane. Returns the state_since_ms written to DB.
+  qint64 start_claude_tab_session(const QString& workspace, int pane_id, const QString& session_id);
 
-  /// End the Claude session. Returns the state_since_ms written to DB.
-  qint64 end_claude_session(const QString& workspace);
+  /// End the Claude session for a pane. Returns the state_since_ms written to DB.
+  qint64 end_claude_tab_session(const QString& workspace, int pane_id);
 
-  QVector< Claude_workspace_status> all_claude_statuses() const;
-  std::optional< Claude_workspace_status> claude_status(const QString& workspace) const;
+  QVector< Claude_tab_status> all_claude_tab_statuses() const;
+  std::optional< Claude_tab_status> claude_tab_status(const QString& workspace, int pane_id) const;
 
   // --- Meta ---
 

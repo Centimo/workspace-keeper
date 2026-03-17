@@ -125,20 +125,34 @@ Status_overlay::Status_overlay(
 
 void Status_overlay::on_status_changed(
   const QString& workspace,
+  int pane_id,
   Claude_state state,
   const QString& tool_name,
   const QString& wait_reason,
   const QString& wait_message,
   qint64 state_since_ms
 ) {
-  _claude_statuses[workspace] = Claude_workspace_status{
-    .workspace_name = workspace,
-    .state = state,
-    .tool_name = tool_name,
-    .wait_reason = wait_reason,
-    .wait_message = wait_message,
-    .state_since_ms = state_since_ms
-  };
+  if (state == Claude_state::NOT_RUNNING) {
+    auto ws_it = _claude_tab_statuses.find(workspace);
+    if (ws_it != _claude_tab_statuses.end()) {
+      ws_it->remove(pane_id);
+      if (ws_it->isEmpty()) {
+        _claude_tab_statuses.erase(ws_it);
+      }
+    }
+  }
+  else {
+    _claude_tab_statuses[workspace][pane_id] = Claude_tab_status{
+      .workspace_name = workspace,
+      .pane_id = pane_id,
+      .state = state,
+      .tool_name = tool_name,
+      .wait_reason = wait_reason,
+      .wait_message = wait_message,
+      .state_since_ms = state_since_ms,
+      .session_id = {}
+    };
+  }
   update_cells();
   update();
 }
@@ -175,6 +189,17 @@ void Status_overlay::toggle_edit_mode() {
   update();
 }
 
+static int state_priority(Claude_state state) {
+  switch (state) {
+    case Claude_state::WAITING:     return 4;
+    case Claude_state::WORKING:     return 3;
+    case Claude_state::REQUESTING:  return 2;
+    case Claude_state::IDLE:        return 1;
+    case Claude_state::NOT_RUNNING: return 0;
+  }
+  return 0;
+}
+
 void Status_overlay::update_cells() {
   _cells.clear();
   const auto& desktops = _desktop_monitor.desktops();
@@ -182,13 +207,22 @@ void Status_overlay::update_cells() {
     Cell_info cell;
     cell.workspace_name = desktop.name;
 
-    auto it = _claude_statuses.find(desktop.name);
-    if (it != _claude_statuses.end()) {
-      cell.state = it->state;
-      cell.tool_name = it->tool_name;
-      cell.wait_reason = it->wait_reason;
-      cell.wait_message = it->wait_message;
-      cell.state_since_ms = it->state_since_ms;
+    auto ws_it = _claude_tab_statuses.find(desktop.name);
+    if (ws_it != _claude_tab_statuses.end()) {
+      // Pick the highest-priority tab status for display
+      const Claude_tab_status* best = nullptr;
+      for (const auto& tab_status : *ws_it) {
+        if (!best || state_priority(tab_status.state) > state_priority(best->state)) {
+          best = &tab_status;
+        }
+      }
+      if (best) {
+        cell.state = best->state;
+        cell.tool_name = best->tool_name;
+        cell.wait_reason = best->wait_reason;
+        cell.wait_message = best->wait_message;
+        cell.state_since_ms = best->state_since_ms;
+      }
     }
 
     _cells.append(cell);

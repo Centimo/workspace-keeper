@@ -23,14 +23,16 @@ class Claude_status_tracker : public QObject {
   void process_event(
     const QString& workspace,
     const QString& event_type,
-    const QStringList& args
+    const QStringList& args,
+    int pane_id
   );
 
-  QVector< Claude_workspace_status> all_statuses() const;
+  QVector< Claude_tab_status> all_statuses() const;
 
  signals:
   void status_changed(
     const QString& workspace,
+    int pane_id,
     Claude_state state,
     const QString& tool_name,
     const QString& wait_reason,
@@ -39,16 +41,17 @@ class Claude_status_tracker : public QObject {
   );
 
  private:
-  void handle_session_start(const QString& workspace, const QStringList& args);
-  void handle_prompt_submit(const QString& workspace, const QStringList& args);
-  void handle_working(const QString& workspace, const QStringList& args);
-  void handle_post_tool(const QString& workspace, const QStringList& args);
-  void handle_stop(const QString& workspace, const QStringList& args);
-  void handle_notification(const QString& workspace, const QStringList& args);
-  void handle_session_end(const QString& workspace, const QStringList& args);
+  void handle_session_start(const QString& workspace, int pane_id, const QStringList& args);
+  void handle_prompt_submit(const QString& workspace, int pane_id, const QStringList& args);
+  void handle_working(const QString& workspace, int pane_id, const QStringList& args);
+  void handle_post_tool(const QString& workspace, int pane_id, const QStringList& args);
+  void handle_stop(const QString& workspace, int pane_id, const QStringList& args);
+  void handle_notification(const QString& workspace, int pane_id, const QStringList& args);
+  void handle_session_end(const QString& workspace, int pane_id, const QStringList& args);
 
   void set_state(
     const QString& workspace,
+    int pane_id,
     Claude_state state,
     const QString& tool_name = {},
     const QString& wait_reason = {},

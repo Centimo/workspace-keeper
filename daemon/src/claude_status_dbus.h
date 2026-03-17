@@ -16,18 +16,24 @@ class Claude_status_dbus : public QDBusAbstractAdaptor {
   explicit Claude_status_dbus(Claude_status_tracker& tracker);
 
  public slots:
-  /// Returns JSON array of workspace statuses:
-  /// [{name, state, tool_name, wait_reason, wait_message, state_since_ms}, ...]
+  /// Returns JSON array of tab statuses:
+  /// [{workspace_name, pane_id, state, tool_name, wait_reason, wait_message, state_since_ms}, ...]
   QString GetAllStatuses();
 
-  void ReportClaudeEvent(const QString& workspace, const QString& event_type, const QString& args_tsv);
+  void ReportClaudeEvent(
+    const QString& workspace,
+    const QString& event_type,
+    const QString& args_tsv,
+    int pane_id
+  );
 
  signals:
-  void StatusChanged(const QString& workspace_name, const QVariantMap& status);
+  void StatusChanged(const QString& workspace_name, int pane_id, const QVariantMap& status);
 
  private:
   void on_status_changed(
     const QString& workspace,
+    int pane_id,
     Claude_state state,
     const QString& tool_name,
     const QString& wait_reason,

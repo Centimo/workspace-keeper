@@ -88,5 +88,7 @@ if [[ -z "$event_type" ]]; then
   exit 0
 fi
 
+pane_id="${WEZTERM_PANE_ID:-0}"
+
 qdbus "$STATUS_SERVICE" "$STATUS_PATH" "${STATUS_IFACE}.ReportClaudeEvent" \
-  "$workspace" "$event_type" "$args_tsv" 2>/dev/null || true
+  "$workspace" "$event_type" "$args_tsv" "$pane_id" 2>/dev/null || true

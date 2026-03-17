@@ -20,9 +20,10 @@ Claude_status_tracker::Claude_status_tracker(Workspace_db& db, QObject* parent)
 void Claude_status_tracker::process_event(
   const QString& workspace,
   const QString& event_type,
-  const QStringList& args
+  const QStringList& args,
+  int pane_id
 ) {
-  qCInfo(logClaude, "'%s' event=%s", qPrintable(workspace), qPrintable(event_type));
+  qCInfo(logClaude, "'%s' pane=%d event=%s", qPrintable(workspace), pane_id, qPrintable(event_type));
 
   auto event = from_wire_string< Claude_event>(event_type);
   if (!event) {
@@ -32,60 +33,60 @@ void Claude_status_tracker::process_event(
   }
 
   switch (*event) {
-    case Claude_event::SESSION_START:  handle_session_start(workspace, args);  break;
-    case Claude_event::PROMPT_SUBMIT:  handle_prompt_submit(workspace, args);  break;
-    case Claude_event::WORKING:        handle_working(workspace, args);        break;
-    case Claude_event::POST_TOOL:      handle_post_tool(workspace, args);      break;
-    case Claude_event::STOP:           handle_stop(workspace, args);           break;
-    case Claude_event::NOTIFICATION:   handle_notification(workspace, args);   break;
-    case Claude_event::SESSION_END:    handle_session_end(workspace, args);    break;
+    case Claude_event::SESSION_START:  handle_session_start(workspace, pane_id, args);  break;
+    case Claude_event::PROMPT_SUBMIT:  handle_prompt_submit(workspace, pane_id, args);  break;
+    case Claude_event::WORKING:        handle_working(workspace, pane_id, args);        break;
+    case Claude_event::POST_TOOL:      handle_post_tool(workspace, pane_id, args);      break;
+    case Claude_event::STOP:           handle_stop(workspace, pane_id, args);           break;
+    case Claude_event::NOTIFICATION:   handle_notification(workspace, pane_id, args);   break;
+    case Claude_event::SESSION_END:    handle_session_end(workspace, pane_id, args);    break;
   }
 }
 
 void Claude_status_tracker::handle_session_start(
-  const QString& workspace, const QStringList& args
+  const QString& workspace, int pane_id, const QStringList& args
 ) {
-  auto since = _db.start_claude_session(workspace, args.value(0));
+  auto since = _db.start_claude_tab_session(workspace, pane_id, args.value(0));
   if (since >= 0) {
-    emit status_changed(workspace, Claude_state::IDLE, {}, {}, {}, since);
+    emit status_changed(workspace, pane_id, Claude_state::IDLE, {}, {}, {}, since);
   }
 }
 
 void Claude_status_tracker::handle_prompt_submit(
-  const QString& workspace, const QStringList& /*args*/
+  const QString& workspace, int pane_id, const QStringList& /*args*/
 ) {
-  set_state(workspace, Claude_state::REQUESTING);
+  set_state(workspace, pane_id, Claude_state::REQUESTING);
 }
 
 void Claude_status_tracker::handle_working(
-  const QString& workspace, const QStringList& args
+  const QString& workspace, int pane_id, const QStringList& args
 ) {
-  set_state(workspace, Claude_state::WORKING, args.value(0));
+  set_state(workspace, pane_id, Claude_state::WORKING, args.value(0));
 }
 
 void Claude_status_tracker::handle_post_tool(
-  const QString& workspace, const QStringList& /*args*/
+  const QString& workspace, int pane_id, const QStringList& /*args*/
 ) {
-  auto current = _db.claude_status(workspace);
+  auto current = _db.claude_tab_status(workspace, pane_id);
   if (current && current->state == Claude_state::WORKING) {
-    auto since = _db.set_claude_state(workspace, Claude_state::WORKING, current->tool_name);
+    auto since = _db.set_claude_tab_state(workspace, pane_id, Claude_state::WORKING, current->tool_name);
     if (since >= 0) {
-      emit status_changed(workspace, Claude_state::WORKING, current->tool_name, {}, {}, since);
+      emit status_changed(workspace, pane_id, Claude_state::WORKING, current->tool_name, {}, {}, since);
     }
   }
   else {
-    set_state(workspace, Claude_state::WORKING);
+    set_state(workspace, pane_id, Claude_state::WORKING);
   }
 }
 
 void Claude_status_tracker::handle_stop(
-  const QString& workspace, const QStringList& /*args*/
+  const QString& workspace, int pane_id, const QStringList& /*args*/
 ) {
-  set_state(workspace, Claude_state::IDLE);
+  set_state(workspace, pane_id, Claude_state::IDLE);
 }
 
 void Claude_status_tracker::handle_notification(
-  const QString& workspace, const QStringList& args
+  const QString& workspace, int pane_id, const QStringList& args
 ) {
   auto type = from_wire_string< Claude_notification>(args.value(0));
   if (!type) {
@@ -97,35 +98,36 @@ void Claude_status_tracker::handle_notification(
   switch (*type) {
     case Claude_notification::PERMISSION_PROMPT:
     case Claude_notification::ELICITATION_DIALOG:
-      set_state(workspace, Claude_state::WAITING, {}, args.value(0), args.value(1));
+      set_state(workspace, pane_id, Claude_state::WAITING, {}, args.value(0), args.value(1));
       break;
     case Claude_notification::IDLE_PROMPT:
-      set_state(workspace, Claude_state::IDLE);
+      set_state(workspace, pane_id, Claude_state::IDLE);
       break;
   }
 }
 
 void Claude_status_tracker::handle_session_end(
-  const QString& workspace, const QStringList& /*args*/
+  const QString& workspace, int pane_id, const QStringList& /*args*/
 ) {
-  auto since = _db.end_claude_session(workspace);
+  auto since = _db.end_claude_tab_session(workspace, pane_id);
   if (since >= 0) {
-    emit status_changed(workspace, Claude_state::NOT_RUNNING, {}, {}, {}, since);
+    emit status_changed(workspace, pane_id, Claude_state::NOT_RUNNING, {}, {}, {}, since);
   }
 }
 
-QVector< Claude_workspace_status> Claude_status_tracker::all_statuses() const {
-  return _db.all_claude_statuses();
+QVector< Claude_tab_status> Claude_status_tracker::all_statuses() const {
+  return _db.all_claude_tab_statuses();
 }
 
 void Claude_status_tracker::set_state(
   const QString& workspace,
+  int pane_id,
   Claude_state state,
   const QString& tool_name,
   const QString& wait_reason,
   const QString& wait_message
 ) {
-  auto current = _db.claude_status(workspace);
+  auto current = _db.claude_tab_status(workspace, pane_id);
   if (current && current->state == state
     && current->tool_name == tool_name
     && current->wait_reason == wait_reason
@@ -134,36 +136,37 @@ void Claude_status_tracker::set_state(
     return;
   }
 
-  auto since = _db.set_claude_state(workspace, state, tool_name, wait_reason, wait_message);
+  auto since = _db.set_claude_tab_state(workspace, pane_id, state, tool_name, wait_reason, wait_message);
   if (since < 0) {
     return;
   }
 
   if (!tool_name.isEmpty()) {
-    qCInfo(logClaude, "'%s' -> %s [tool=%s]",
-      qPrintable(workspace), qPrintable(to_wire_string(state)), qPrintable(tool_name));
+    qCInfo(logClaude, "'%s' pane=%d -> %s [tool=%s]",
+      qPrintable(workspace), pane_id, qPrintable(to_wire_string(state)), qPrintable(tool_name));
   }
   else {
-    qCInfo(logClaude, "'%s' -> %s", qPrintable(workspace), qPrintable(to_wire_string(state)));
+    qCInfo(logClaude, "'%s' pane=%d -> %s", qPrintable(workspace), pane_id, qPrintable(to_wire_string(state)));
   }
 
-  emit status_changed(workspace, state, tool_name, wait_reason, wait_message, since);
+  emit status_changed(workspace, pane_id, state, tool_name, wait_reason, wait_message, since);
 }
 
 void Claude_status_tracker::check_timeouts() {
   auto now = QDateTime::currentMSecsSinceEpoch();
   auto timeout_ms = std::chrono::duration_cast< std::chrono::milliseconds>(_working_timeout).count();
 
-  auto statuses = _db.all_claude_statuses();
+  auto statuses = _db.all_claude_tab_statuses();
   for (const auto& status : statuses) {
     if ((status.state == Claude_state::WORKING || status.state == Claude_state::REQUESTING)
       && (now - status.state_since_ms) > timeout_ms
     ) {
-      qCWarning(logClaude, "workspace '%s' %s timeout (%" PRId64 " min), resetting to IDLE",
+      qCWarning(logClaude, "workspace '%s' pane=%d %s timeout (%" PRId64 " min), resetting to IDLE",
         qPrintable(status.workspace_name),
+        status.pane_id,
         qPrintable(to_wire_string(status.state)),
         static_cast< int64_t>(std::chrono::duration_cast< std::chrono::minutes>(_working_timeout).count()));
-      set_state(status.workspace_name, Claude_state::IDLE);
+      set_state(status.workspace_name, status.pane_id, Claude_state::IDLE);
     }
   }
 }

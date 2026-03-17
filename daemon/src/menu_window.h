@@ -2,6 +2,8 @@
 
 #include "workspace_menu.h"
 
+#include <claude_types.h>
+
 #include <QAbstractNativeEventFilter>
 #include <QWidget>
 
@@ -9,8 +11,10 @@ class QLabel;
 class QLineEdit;
 class QListWidget;
 class QListWidgetItem;
+class QScrollArea;
 class Desktop_monitor;
 class Workspace_db;
+class Claude_status_tracker;
 
 class Menu_window
   : public QWidget
@@ -19,13 +23,29 @@ class Menu_window
   Q_OBJECT
 
  public:
-  explicit Menu_window(Workspace_db& db, Desktop_monitor& desktop_monitor, QWidget* parent = nullptr);
+  explicit Menu_window(
+    Workspace_db& db,
+    Desktop_monitor& desktop_monitor,
+    Claude_status_tracker& claude_tracker,
+    QWidget* parent = nullptr
+  );
 
   void activate(qint64 client_timestamp_ms = 0);
   void cancel_session();
 
  signals:
   void session_finished(const QString& response);
+
+ public slots:
+  void on_tab_status_changed(
+    const QString& workspace,
+    int pane_id,
+    Claude_state state,
+    const QString& tool_name,
+    const QString& wait_reason,
+    const QString& wait_message,
+    qint64 state_since_ms
+  );
 
  protected:
   bool nativeEventFilter(const QByteArray& event_type, void* message, long* result) override;
@@ -37,9 +57,13 @@ class Menu_window
   void rebuild_list();
   void update_selection();
   void on_filter_changed(const QString& text);
+  void rebuild_dashboard();
 
   Workspace_menu _menu;
+  Workspace_db& _db;
 
+  QScrollArea* _dashboard_scroll;
+  QWidget* _dashboard_widget;
   QLineEdit* _filter_input;
   QLabel* _message_label;
   QListWidget* _list_widget;

@@ -21,6 +21,18 @@ const char* state_text_color_hex(Claude_state state);
 /// Single-character label for the given state (e.g. "R", "W").
 const char* state_label(Claude_state state);
 
+/// Per-tab snapshot of Claude Code status.
+struct Claude_tab_status {
+  QString workspace_name;
+  int pane_id = 0;
+  Claude_state state = Claude_state::NOT_RUNNING;
+  QString tool_name;     ///< Current tool (only meaningful in WORKING state)
+  QString wait_reason;   ///< Why Claude is waiting (only meaningful in WAITING state)
+  QString wait_message;  ///< User-facing wait message (only meaningful in WAITING state)
+  qint64 state_since_ms = 0;  ///< Epoch millis when current state began
+  QString session_id;
+};
+
 /// Per-workspace snapshot of Claude Code status.
 struct Claude_workspace_status {
   QString workspace_name;
