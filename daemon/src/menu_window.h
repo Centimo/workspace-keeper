@@ -51,6 +51,7 @@ class Menu_window
   bool nativeEventFilter(const QByteArray& event_type, void* message, long* result) override;
   bool eventFilter(QObject* obj, QEvent* event) override;
   void changeEvent(QEvent* event) override;
+  bool event(QEvent* event) override;
 
  private:
   void finish_session(const QString& response);

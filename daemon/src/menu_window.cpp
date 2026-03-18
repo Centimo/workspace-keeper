@@ -311,6 +311,20 @@ void Menu_window::changeEvent(QEvent* event) {
   }
 }
 
+bool Menu_window::event(QEvent* event) {
+  // Guard: if window is hidden without ever becoming active (e.g. WM refused focus),
+  // finish the session so _shortcut_session doesn't get stuck.
+  if (event->type() == QEvent::Hide && !_shown) {
+    // Use QMetaObject::invokeMethod to avoid re-entrancy during event processing
+    QMetaObject::invokeMethod(this, [this]() {
+      if (!isVisible() && !_shown) {
+        finish_session("cancelled");
+      }
+    }, Qt::QueuedConnection);
+  }
+  return QWidget::event(event);
+}
+
 void Menu_window::rebuild_list() {
   _list_widget->clear();
 
@@ -527,9 +541,18 @@ void Menu_window::rebuild_dashboard() {
 
   row_layout->addStretch();
 
-  // Size dashboard to content
-  _dashboard_widget->adjustSize();
-  int dashboard_height = _dashboard_widget->sizeHint().height();
+  // Compute height from content without triggering event processing:
+  // header row (font ~14px + spacing) + each tab row (font ~15px + spacing) + padding
+  static constexpr int _row_height = 20;
+  static constexpr int _header_row_height = 18;
+  int max_tabs = 0;
+  for (const auto& ws_info : active_workspaces) {
+    auto it = tabs_map.find(ws_info.name);
+    if (it != tabs_map.end()) {
+      max_tabs = std::max(max_tabs, static_cast< int>(it->size()));
+    }
+  }
+  int dashboard_height = _padding + _header_row_height + max_tabs * _row_height + _padding / 2;
   _dashboard_scroll->setFixedHeight(dashboard_height);
   _dashboard_scroll->show();
 }
