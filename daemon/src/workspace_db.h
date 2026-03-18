@@ -57,6 +57,9 @@ class Workspace_db {
   /// @return JSON array of all workspaces with name, project_dir, tab_count, is_active.
   QJsonArray all_workspaces() const;
 
+  /// Remove a workspace and all its associated data from the database.
+  void delete_workspace(const QString& name);
+
   /// Update active desktop state from the window manager snapshot.
   /// Marks matching workspaces as active, clears active flag for the rest.
   void sync_active_desktops(const QVector< Desktop_info>& desktops);

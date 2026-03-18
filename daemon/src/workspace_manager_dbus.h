@@ -17,6 +17,7 @@ class Workspace_manager_dbus : public QDBusAbstractAdaptor {
 
  public slots:
   void CreateWorkspace(const QString& name, const QString& project_dir);
+  void DeleteWorkspace(const QString& name);
   QString GetProjectDir(const QString& workspace_name);
   QString FindWorkspaceByPath(const QString& path);
   QString ListWorkspaces();

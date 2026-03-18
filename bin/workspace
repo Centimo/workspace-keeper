@@ -718,6 +718,15 @@ cmd_handle_response() {
         return 1
       fi
       ;;
+    delete_saved)
+      if [[ -n "$ws_name" ]]; then
+        dbus_call DeleteWorkspace "$ws_name"
+        echo "Saved workspace '$ws_name' deleted"
+      else
+        echo "Error: workspace '$selected' not found" >&2
+        return 1
+      fi
+      ;;
   esac
 }
 

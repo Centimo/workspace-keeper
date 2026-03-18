@@ -139,7 +139,7 @@ Menu_window::Menu_window(
   main_layout->addWidget(input_wrapper);
 
   // Message bar
-  _message_label = new QLabel("Enter: switch/create  Tab: complete path  Alt+Del: close", background);
+  _message_label = new QLabel("Enter: switch/create  Tab: complete path  Alt+Del: close/delete", background);
   _message_label->setFixedHeight(_message_bar_height);
   _message_label->setAlignment(Qt::AlignCenter);
   _message_label->setStyleSheet("color: #7f8c8d; font-family: Hack; font-size: 13px;");
@@ -162,6 +162,20 @@ Menu_window::Menu_window(
   connect(_filter_input, &QLineEdit::textChanged, this, &Menu_window::on_filter_changed);
   connect(_menu.model(), &QAbstractItemModel::modelReset, this, &Menu_window::rebuild_list);
   connect(_menu.model(), &Workspace_model::selected_index_changed, this, &Menu_window::update_selection);
+
+  _delete_confirm_timer.setSingleShot(true);
+  connect(&_delete_confirm_timer, &QTimer::timeout, this, &Menu_window::cancel_delete_confirm);
+
+  _delete_confirm_tick.setInterval(500);
+  connect(&_delete_confirm_tick, &QTimer::timeout, this, [this]() {
+    _delete_confirm_remaining_ms -= 500;
+    auto name = _pending_delete_response.mid(QString("delete_saved ").length());
+    int secs = (_delete_confirm_remaining_ms + 999) / 1000;
+    _message_label->setText(
+      QString("Delete \"%1\"? Alt+Del to confirm (%2s)  Esc/any key to cancel").arg(name).arg(secs)
+    );
+    _message_label->setStyleSheet("color: #ed1515; font-family: Hack; font-size: 13px;");
+  });
 }
 
 void Menu_window::activate(qint64 client_timestamp_ms) {
@@ -208,7 +222,34 @@ void Menu_window::activate(qint64 client_timestamp_ms) {
   activateWindow();
 }
 
+void Menu_window::show_delete_confirm(const QString& response) {
+  static constexpr int _confirm_timeout_ms = 3000;
+  _pending_delete_response = response;
+  _delete_confirm_remaining_ms = _confirm_timeout_ms;
+  _delete_confirm_timer.start(_confirm_timeout_ms);
+  _delete_confirm_tick.start();
+
+  auto name = response.mid(QString("delete_saved ").length());
+  int secs = _confirm_timeout_ms / 1000;
+  _message_label->setText(
+    QString("Delete \"%1\"? Alt+Del to confirm (%2s)  Esc/any key to cancel").arg(name).arg(secs)
+  );
+  _message_label->setStyleSheet("color: #ed1515; font-family: Hack; font-size: 13px;");
+}
+
+void Menu_window::cancel_delete_confirm() {
+  if (_pending_delete_response.isEmpty()) {
+    return;
+  }
+  _pending_delete_response.clear();
+  _delete_confirm_timer.stop();
+  _delete_confirm_tick.stop();
+  _message_label->setText("Enter: switch/create  Tab: complete path  Alt+Del: close/delete");
+  _message_label->setStyleSheet("color: #7f8c8d; font-family: Hack; font-size: 13px;");
+}
+
 void Menu_window::finish_session(const QString& response) {
+  cancel_delete_confirm();
   _shown = false;
   hide();
 
@@ -236,6 +277,13 @@ void Menu_window::cancel_session() {
 bool Menu_window::eventFilter(QObject* obj, QEvent* event) {
   if (obj == _filter_input && event->type() == QEvent::KeyPress) {
     auto* key_event = static_cast< QKeyEvent*>(event);
+
+    // Any key except Alt+Del cancels a pending delete confirmation
+    bool is_alt_del = key_event->key() == Qt::Key_Delete
+      && (key_event->modifiers() & Qt::AltModifier);
+    if (!is_alt_del && !_pending_delete_response.isEmpty()) {
+      cancel_delete_confirm();
+    }
 
     if (key_event->key() == Qt::Key_Return || key_event->key() == Qt::Key_Enter) {
       auto response = _menu.select_current();
@@ -270,9 +318,20 @@ bool Menu_window::eventFilter(QObject* obj, QEvent* event) {
       return true;
     }
     if (key_event->key() == Qt::Key_Delete && (key_event->modifiers() & Qt::AltModifier)) {
-      auto response = _menu.close_current();
-      if (!response.isEmpty()) {
+      if (!_pending_delete_response.isEmpty()) {
+        // Second Alt+Del within confirm window — execute
+        auto response = _pending_delete_response;
+        cancel_delete_confirm();
         finish_session(response);
+      }
+      else {
+        auto response = _menu.close_current();
+        if (response.startsWith("delete_saved ")) {
+          show_delete_confirm(response);
+        }
+        else if (!response.isEmpty()) {
+          finish_session(response);
+        }
       }
       return true;
     }

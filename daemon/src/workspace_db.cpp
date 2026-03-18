@@ -89,7 +89,7 @@ void Workspace_db::create_tables() {
 
   if (!query.exec(
     "CREATE TABLE IF NOT EXISTS claude_tab_session ("
-    "  workspace_name TEXT NOT NULL REFERENCES workspace(name),"
+    "  workspace_name TEXT NOT NULL REFERENCES workspace(name) ON DELETE CASCADE,"
     "  pane_id        INTEGER NOT NULL,"
     "  session_id     TEXT,"
     "  state          TEXT NOT NULL DEFAULT 'not_running',"
@@ -159,6 +159,16 @@ void Workspace_db::create_workspace(const QString& name, const QString& project_
 
   if (!query.exec()) {
     qCWarning(logServer, "create_workspace: failed for '%s': %s",
+      qPrintable(name), qPrintable(query.lastError().text()));
+  }
+}
+
+void Workspace_db::delete_workspace(const QString& name) {
+  QSqlQuery query(_db);
+  query.prepare("DELETE FROM workspace WHERE name = ?");
+  query.addBindValue(name);
+  if (!query.exec()) {
+    qCWarning(logServer, "delete_workspace: failed for '%s': %s",
       qPrintable(name), qPrintable(query.lastError().text()));
   }
 }

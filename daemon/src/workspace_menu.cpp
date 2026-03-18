@@ -46,7 +46,12 @@ QString Workspace_menu::select_current() {
 QString Workspace_menu::close_current() {
   const auto* entry = _model.selected_entry();
   if (entry && entry->type == Entry_type::WORKSPACE) {
-    return "close " + entry->data;
+    if (entry->is_active) {
+      return "close " + entry->data;
+    }
+    else {
+      return "delete_saved " + entry->data;
+    }
   }
   return {};
 }

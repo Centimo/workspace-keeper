@@ -5,6 +5,7 @@
 #include <claude_types.h>
 
 #include <QAbstractNativeEventFilter>
+#include <QTimer>
 #include <QWidget>
 
 class QLabel;
@@ -59,6 +60,8 @@ class Menu_window
   void update_selection();
   void on_filter_changed(const QString& text);
   void rebuild_dashboard();
+  void show_delete_confirm(const QString& response);
+  void cancel_delete_confirm();
 
   Workspace_menu _menu;
   Workspace_db& _db;
@@ -71,6 +74,12 @@ class Menu_window
   bool _shown = false;
   qint64 _client_timestamp_ms = 0;
   int _saved_keyboard_layout = -1;
+
+  // Inline delete confirmation state
+  QString _pending_delete_response;
+  QTimer _delete_confirm_timer;
+  int _delete_confirm_remaining_ms = 0;
+  QTimer _delete_confirm_tick;
 
   static constexpr int _padding = 12;
   static constexpr int _max_visible_items = 15;

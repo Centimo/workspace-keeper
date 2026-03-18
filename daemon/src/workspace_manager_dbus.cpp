@@ -36,6 +36,11 @@ void Workspace_manager_dbus::CreateWorkspace(const QString& name, const QString&
   _db.create_workspace(name, project_dir);
 }
 
+void Workspace_manager_dbus::DeleteWorkspace(const QString& name) {
+  _db.delete_workspace(name);
+  qCInfo(logServer, "DeleteWorkspace: removed '%s'", qPrintable(name));
+}
+
 QString Workspace_manager_dbus::GetProjectDir(const QString& workspace_name) {
   return _db.get_project_dir(workspace_name);
 }
