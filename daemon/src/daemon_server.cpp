@@ -134,7 +134,16 @@ void Daemon_server::on_client_disconnected() {
 }
 
 void Daemon_server::trigger_from_shortcut() {
-  if (_active_client || _shortcut_session || _window.isVisible()) {
+  if (_active_client) {
+    qCInfo(logServer, "shortcut ignored: active socket client");
+    return;
+  }
+  if (_shortcut_session) {
+    qCInfo(logServer, "shortcut ignored: shortcut session already active");
+    return;
+  }
+  if (_window.isVisible()) {
+    qCInfo(logServer, "shortcut ignored: window already visible");
     return;
   }
 

@@ -166,6 +166,7 @@ Menu_window::Menu_window(
 
 void Menu_window::activate(qint64 client_timestamp_ms) {
   if (isVisible()) {
+    qCWarning(logWindow, "activate() called while already visible — ignoring");
     return;
   }
 
@@ -308,6 +309,9 @@ void Menu_window::changeEvent(QEvent* event) {
     else if (_shown) {
       finish_session("cancelled");
     }
+    else {
+      qCInfo(logWindow, "ActivationChange: not active, _shown=false — ignoring");
+    }
   }
 }
 
@@ -315,7 +319,7 @@ bool Menu_window::event(QEvent* event) {
   // Guard: if window is hidden without ever becoming active (e.g. WM refused focus),
   // finish the session so _shortcut_session doesn't get stuck.
   if (event->type() == QEvent::Hide && !_shown) {
-    // Use QMetaObject::invokeMethod to avoid re-entrancy during event processing
+    qCWarning(logWindow, "Hide event while _shown=false — finishing session via queued call");
     QMetaObject::invokeMethod(this, [this]() {
       if (!isVisible() && !_shown) {
         finish_session("cancelled");
