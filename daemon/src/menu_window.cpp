@@ -27,21 +27,22 @@
 
 #include <xcb/xcb.h>
 
-static const QString style_sheet = R"(
+static QString make_style_sheet(int font_size_item, int input_padding, int bg_radius, int input_radius) {
+  return QString(R"(
   QWidget#background {
     background-color: #232627;
     border: 1px solid #3daee9;
-    border-radius: 6px;
+    border-radius: %2px;
   }
   QLineEdit {
     background-color: #2a2e32;
     color: #fcfcfc;
     border: 1px solid #3daee9;
-    border-radius: 4px;
-    padding-left: 8px;
-    padding-right: 8px;
+    border-radius: %4px;
+    padding-left: %3px;
+    padding-right: %3px;
     font-family: Hack;
-    font-size: 18px;
+    font-size: %1px;
   }
   QListWidget {
     background-color: transparent;
@@ -55,32 +56,17 @@ static const QString style_sheet = R"(
   QListWidget::item:selected {
     background-color: transparent;
   }
-)";
-
-// px from left edge of background widget
-static constexpr int text_x = 21;     // 12 (input wrapper margin) + 1 (border) + 8 (padding)
-static constexpr int header_x = 6;
-
-static QString item_style(const QString& color) {
-  return QString(
-    "color: %1; background: transparent; font-family: Hack;"
-    "font-size: 18px; padding-left: %2px;"
-  ).arg(color).arg(text_x - 1);  // -1 for list widget 1px margin
+)").arg(font_size_item).arg(bg_radius).arg(input_padding).arg(input_radius);
 }
 
-static QString selected_item_style() {
-  return QString(
-    "color: #1a1a1a; background: #1d99f3; font-family: Hack;"
-    "font-size: 18px; padding-left: %1px; border-radius: 3px;"
-  ).arg(text_x - 1);
-}
+// base px from left edge of background widget (before scaling)
+static constexpr int base_text_x = 21;   // 12 (input wrapper margin) + 1 (border) + 8 (padding)
+static constexpr int base_header_x = 6;
 
-static QString header_style() {
-  return QString(
-    "color: #7f8c8d; background: #1e2123; font-family: Hack;"
-    "font-size: 20px; font-weight: bold; padding-left: %1px;"
-  ).arg(header_x - 1);  // -1 for list widget 1px margin
-}
+// base font sizes
+static constexpr int base_font_item = 18;
+static constexpr int base_font_header = 20;
+static constexpr int base_font_message = 13;
 
 Menu_window::Menu_window(
   Workspace_db& db,
@@ -93,29 +79,29 @@ Menu_window::Menu_window(
   , _db(db)
 {
   Q_UNUSED(claude_tracker)
+
+  reload_scale();
+
   QCoreApplication::instance()->installNativeEventFilter(this);
 
   setWindowFlags(Qt::FramelessWindowHint | Qt::WindowStaysOnTopHint | Qt::Popup);
   setAttribute(Qt::WA_TranslucentBackground);
-  setFixedWidth(600);
 
-  auto* background = new QWidget(this);
-  background->setObjectName("background");
-  background->setStyleSheet(style_sheet);
+  _background = new QWidget(this);
+  _background->setObjectName("background");
 
   auto* outer_layout = new QVBoxLayout(this);
   outer_layout->setContentsMargins(0, 0, 0, 0);
-  outer_layout->addWidget(background);
+  outer_layout->addWidget(_background);
 
-  auto* main_layout = new QVBoxLayout(background);
-  main_layout->setContentsMargins(0, _padding, 0, _padding);
-  main_layout->setSpacing(0);
+  _main_layout = new QVBoxLayout(_background);
+  _main_layout->setSpacing(0);
 
   // Dashboard: scrollable area with tab status grid
   _dashboard_widget = new QWidget();
   _dashboard_widget->setStyleSheet("background: transparent;");
 
-  _dashboard_scroll = new QScrollArea(background);
+  _dashboard_scroll = new QScrollArea(_background);
   _dashboard_scroll->setWidget(_dashboard_widget);
   _dashboard_scroll->setWidgetResizable(true);
   _dashboard_scroll->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
@@ -123,45 +109,46 @@ Menu_window::Menu_window(
   _dashboard_scroll->setFrameShape(QFrame::NoFrame);
   _dashboard_scroll->setStyleSheet("background: transparent;");
   _dashboard_scroll->hide();
-  main_layout->addWidget(_dashboard_scroll);
+  _main_layout->addWidget(_dashboard_scroll);
 
   // Input field with horizontal padding
-  _filter_input = new QLineEdit(background);
+  _filter_input = new QLineEdit(_background);
   _filter_input->setPlaceholderText("type to filter...");
-  _filter_input->setFixedHeight(_input_height);
   _filter_input->installEventFilter(this);
 
-  auto* input_wrapper = new QWidget(background);
-  auto* input_layout = new QVBoxLayout(input_wrapper);
-  input_layout->setContentsMargins(_padding, 0, _padding, 0);
-  input_layout->setSpacing(0);
-  input_layout->addWidget(_filter_input);
-  main_layout->addWidget(input_wrapper);
+  auto* input_wrapper = new QWidget(_background);
+  _input_layout = new QVBoxLayout(input_wrapper);
+  _input_layout->setSpacing(0);
+  _input_layout->addWidget(_filter_input);
+  _main_layout->addWidget(input_wrapper);
 
   // Message bar
-  _message_label = new QLabel("Enter: switch/create  Tab: complete path  Alt+Del: close/delete", background);
-  _message_label->setFixedHeight(_message_bar_height);
+  _message_label = new QLabel("Enter: switch/create  Tab: complete path  Alt+Del: close/delete", _background);
   _message_label->setAlignment(Qt::AlignCenter);
-  _message_label->setStyleSheet("color: #7f8c8d; font-family: Hack; font-size: 13px;");
-  main_layout->addWidget(_message_label);
+  _main_layout->addWidget(_message_label);
 
   // List — 1px horizontal margin to not cover border
-  _list_widget = new QListWidget(background);
+  _list_widget = new QListWidget(_background);
   _list_widget->setFocusPolicy(Qt::NoFocus);
   _list_widget->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
   _list_widget->setVerticalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
   _list_widget->setSelectionMode(QAbstractItemView::SingleSelection);
 
-  auto* list_wrapper = new QWidget(background);
+  auto* list_wrapper = new QWidget(_background);
   auto* list_layout = new QVBoxLayout(list_wrapper);
   list_layout->setContentsMargins(1, 0, 1, 0);
   list_layout->setSpacing(0);
   list_layout->addWidget(_list_widget);
-  main_layout->addWidget(list_wrapper);
+  _main_layout->addWidget(list_wrapper);
+
+  apply_scale();
 
   connect(_filter_input, &QLineEdit::textChanged, this, &Menu_window::on_filter_changed);
   connect(_menu.model(), &QAbstractItemModel::modelReset, this, &Menu_window::rebuild_list);
   connect(_menu.model(), &Workspace_model::selected_index_changed, this, &Menu_window::update_selection);
+
+  _scale_hint_timer.setSingleShot(true);
+  connect(&_scale_hint_timer, &QTimer::timeout, this, &Menu_window::restore_message_bar);
 
   _delete_confirm_timer.setSingleShot(true);
   connect(&_delete_confirm_timer, &QTimer::timeout, this, &Menu_window::cancel_delete_confirm);
@@ -174,8 +161,69 @@ Menu_window::Menu_window(
     _message_label->setText(
       QString("Delete \"%1\"? Alt+Del to confirm (%2s)  Esc/any key to cancel").arg(name).arg(secs)
     );
-    _message_label->setStyleSheet("color: #ed1515; font-family: Hack; font-size: 13px;");
+    _message_label->setStyleSheet(
+    QString("color: #ed1515; font-family: Hack; font-size: %1px;").arg(sc(base_font_message))
+  );
   });
+}
+
+void Menu_window::reload_scale() {
+  auto scale_meta = _db.get_meta("menu_scale");
+  if (scale_meta.isEmpty()) {
+    _db.set_meta("menu_scale", QString::number(_scale));
+  }
+  else {
+    bool ok = false;
+    double val = scale_meta.toDouble(&ok);
+    if (ok && val > 0.0) {
+      _scale = val;
+    }
+  }
+}
+
+void Menu_window::apply_scale() {
+  setFixedWidth(sc(_base_width));
+  _background->setStyleSheet(make_style_sheet(sc(base_font_item), sc(8), sc(6), sc(4)));
+  _main_layout->setContentsMargins(0, sc(_base_padding), 0, sc(_base_padding));
+  _input_layout->setContentsMargins(sc(_base_padding), 0, sc(_base_padding), 0);
+  _filter_input->setFixedHeight(sc(_base_input_height));
+  _message_label->setFixedHeight(sc(_base_message_bar_height));
+  _message_label->setStyleSheet(
+    QString("color: #7f8c8d; font-family: Hack; font-size: %1px;").arg(sc(base_font_message))
+  );
+}
+
+void Menu_window::show_scale_hint() {
+  _scale_hint_timer.start(2000);
+  _message_label->setText(QString("Scale: %1  Ctrl++/Ctrl+- to adjust").arg(_scale, 0, 'f', 1));
+  _message_label->setStyleSheet(
+    QString("color: #1d99f3; font-family: Hack; font-size: %1px;").arg(sc(base_font_message))
+  );
+}
+
+void Menu_window::restore_message_bar() {
+  if (!_pending_delete_response.isEmpty()) {
+    return;
+  }
+  _message_label->setText("Enter: switch/create  Tab: complete path  Alt+Del: close/delete");
+  _message_label->setStyleSheet(
+    QString("color: #7f8c8d; font-family: Hack; font-size: %1px;").arg(sc(base_font_message))
+  );
+}
+
+void Menu_window::change_scale(double delta) {
+  _scale = qMax(0.5, _scale + delta);
+  _db.set_meta("menu_scale", QString::number(_scale));
+  apply_scale();
+  rebuild_dashboard();
+  rebuild_list();
+  if (auto* screen = QApplication::primaryScreen()) {
+    auto geometry = screen->geometry();
+    int x = (geometry.width() - width()) / 2 + geometry.x();
+    int y = (geometry.height() - height()) / 3 + geometry.y();
+    move(x, y);
+  }
+  show_scale_hint();
 }
 
 void Menu_window::activate(qint64 client_timestamp_ms) {
@@ -203,8 +251,11 @@ void Menu_window::activate(qint64 client_timestamp_ms) {
     }
   }
 
-  _menu.begin_session();
+  reload_scale();
+  apply_scale();
+
   rebuild_dashboard();
+  _menu.begin_session();
   rebuild_list();
 
   if (auto* screen = QApplication::primaryScreen()) {
@@ -218,12 +269,14 @@ void Menu_window::activate(qint64 client_timestamp_ms) {
   _filter_input->setFocus();
 
   show();
+  qCInfo(logWindow, "activate: window size after show = %dx%d, fixedHeight=%d", width(), height(), minimumHeight());
   raise();
   activateWindow();
 }
 
 void Menu_window::show_delete_confirm(const QString& response) {
   static constexpr int _confirm_timeout_ms = 3000;
+  _scale_hint_timer.stop();
   _pending_delete_response = response;
   _delete_confirm_remaining_ms = _confirm_timeout_ms;
   _delete_confirm_timer.start(_confirm_timeout_ms);
@@ -234,7 +287,9 @@ void Menu_window::show_delete_confirm(const QString& response) {
   _message_label->setText(
     QString("Delete \"%1\"? Alt+Del to confirm (%2s)  Esc/any key to cancel").arg(name).arg(secs)
   );
-  _message_label->setStyleSheet("color: #ed1515; font-family: Hack; font-size: 13px;");
+  _message_label->setStyleSheet(
+    QString("color: #ed1515; font-family: Hack; font-size: %1px;").arg(sc(base_font_message))
+  );
 }
 
 void Menu_window::cancel_delete_confirm() {
@@ -244,12 +299,12 @@ void Menu_window::cancel_delete_confirm() {
   _pending_delete_response.clear();
   _delete_confirm_timer.stop();
   _delete_confirm_tick.stop();
-  _message_label->setText("Enter: switch/create  Tab: complete path  Alt+Del: close/delete");
-  _message_label->setStyleSheet("color: #7f8c8d; font-family: Hack; font-size: 13px;");
+  restore_message_bar();
 }
 
 void Menu_window::finish_session(const QString& response) {
   cancel_delete_confirm();
+  _scale_hint_timer.stop();
   _shown = false;
   hide();
 
@@ -315,6 +370,17 @@ bool Menu_window::eventFilter(QObject* obj, QEvent* event) {
     }
     if (key_event->key() == Qt::Key_Down) {
       _menu.model()->navigate(1);
+      return true;
+    }
+    if (
+      (key_event->key() == Qt::Key_Plus || key_event->key() == Qt::Key_Equal)
+      && (key_event->modifiers() & Qt::ControlModifier)
+    ) {
+      change_scale(0.1);
+      return true;
+    }
+    if (key_event->key() == Qt::Key_Minus && (key_event->modifiers() & Qt::ControlModifier)) {
+      change_scale(-0.1);
       return true;
     }
     if (key_event->key() == Qt::Key_Delete && (key_event->modifiers() & Qt::AltModifier)) {
@@ -389,6 +455,9 @@ bool Menu_window::event(QEvent* event) {
 }
 
 void Menu_window::rebuild_list() {
+  if (!isVisible()) {
+    return;
+  }
   _list_widget->clear();
 
   auto* model = _menu.model();
@@ -401,7 +470,7 @@ void Menu_window::rebuild_list() {
     auto is_active = model->data(index, Workspace_model::IS_ACTIVE).toBool();
 
     auto* item = new QListWidgetItem(_list_widget);
-    int height = (entry_type == Entry_type::SECTION_HEADER) ? _header_height : _item_height;
+    int height = (entry_type == Entry_type::SECTION_HEADER) ? sc(_base_header_height) : sc(_base_item_height);
     item->setSizeHint(QSize(0, height));
 
     auto* label = new QLabel(display_text, _list_widget);
@@ -409,11 +478,17 @@ void Menu_window::rebuild_list() {
 
     if (entry_type == Entry_type::SECTION_HEADER) {
       item->setFlags(Qt::NoItemFlags);
-      label->setStyleSheet(header_style());
+      label->setStyleSheet(QString(
+        "color: #7f8c8d; background: #1e2123; font-family: Hack;"
+        "font-size: %1px; font-weight: bold; padding-left: %2px;"
+      ).arg(sc(base_font_header)).arg(sc(base_header_x) - 1));
     }
     else {
       QString color = is_active ? "#1d99f3" : "#fcfcfc";
-      label->setStyleSheet(item_style(color));
+      label->setStyleSheet(QString(
+        "color: %1; background: transparent; font-family: Hack;"
+        "font-size: %2px; padding-left: %3px;"
+      ).arg(color).arg(sc(base_font_item)).arg(sc(base_text_x) - 1));
       label->setProperty("base_text", display_text);
       label->setProperty("base_color", color);
       label->setProperty("is_selectable", true);
@@ -432,8 +507,10 @@ void Menu_window::rebuild_list() {
   }
   _list_widget->setFixedHeight(list_height);
 
-  int dashboard_height = _dashboard_scroll->isVisible() ? _dashboard_scroll->height() : 0;
-  int total_height = _padding * 2 + dashboard_height + _input_height + _message_bar_height + list_height + _border_width * 2;
+  int dashboard_height = _dashboard_scroll->isVisible() ? _dashboard_scroll->minimumHeight() : 0;
+  int total_height = sc(_base_padding) * 2 + dashboard_height + sc(_base_input_height) + sc(_base_message_bar_height) + list_height + _border_width * 2;
+  qCInfo(logWindow, "rebuild_list: scale=%.2f dashboard=%d input=%d msgbar=%d list=%d padding=%d total=%d",
+    _scale, dashboard_height, sc(_base_input_height), sc(_base_message_bar_height), list_height, sc(_base_padding), total_height);
   setFixedHeight(total_height);
 }
 
@@ -449,12 +526,18 @@ void Menu_window::update_selection() {
     auto base_text = label->property("base_text").toString();
     if (i == selected) {
       label->setText(" " + base_text);
-      label->setStyleSheet(selected_item_style());
+      label->setStyleSheet(QString(
+        "color: #1a1a1a; background: #1d99f3; font-family: Hack;"
+        "font-size: %1px; padding-left: %2px; border-radius: %3px;"
+      ).arg(sc(base_font_item)).arg(sc(base_text_x) - 1).arg(sc(3)));
     }
     else {
       label->setText(base_text);
       QString color = label->property("base_color").toString();
-      label->setStyleSheet(item_style(color));
+      label->setStyleSheet(QString(
+        "color: %1; background: transparent; font-family: Hack;"
+        "font-size: %2px; padding-left: %3px;"
+      ).arg(color).arg(sc(base_font_item)).arg(sc(base_text_x) - 1));
     }
   }
 
@@ -539,8 +622,8 @@ void Menu_window::rebuild_dashboard() {
   }
 
   auto* row_layout = new QHBoxLayout(_dashboard_widget);
-  row_layout->setContentsMargins(_padding, _padding / 2, _padding, _padding / 2);
-  row_layout->setSpacing(12);
+  row_layout->setContentsMargins(sc(_base_padding), sc(_base_padding / 2), sc(_base_padding), sc(_base_padding / 2));
+  row_layout->setSpacing(sc(12));
 
   for (const auto& ws_info : active_workspaces) {
     auto tabs_it = tabs_map.find(ws_info.name);
@@ -551,11 +634,13 @@ void Menu_window::rebuild_dashboard() {
     auto* col = new QWidget(_dashboard_widget);
     auto* col_layout = new QVBoxLayout(col);
     col_layout->setContentsMargins(0, 0, 0, 0);
-    col_layout->setSpacing(2);
+    col_layout->setSpacing(sc(2));
 
     // Workspace name header
     auto* header = new QLabel(ws_info.name, col);
-    header->setStyleSheet("color: #7f8c8d; font-family: Hack; font-size: 12px; font-weight: bold;");
+    header->setStyleSheet(
+      QString("color: #7f8c8d; font-family: Hack; font-size: %1px; font-weight: bold;").arg(sc(12))
+    );
     col_layout->addWidget(header);
 
     // One row per tab
@@ -563,7 +648,7 @@ void Menu_window::rebuild_dashboard() {
       auto* tab_row = new QWidget(col);
       auto* tab_layout = new QHBoxLayout(tab_row);
       tab_layout->setContentsMargins(0, 0, 0, 0);
-      tab_layout->setSpacing(6);
+      tab_layout->setSpacing(sc(6));
 
       // CWD: last path component
       QString cwd_display = tab.cwd.isEmpty() ? "~" : QFileInfo(tab.cwd).fileName();
@@ -572,8 +657,10 @@ void Menu_window::rebuild_dashboard() {
       }
 
       auto* cwd_label = new QLabel(cwd_display, tab_row);
-      cwd_label->setStyleSheet("color: #fcfcfc; font-family: Hack; font-size: 13px;");
-      cwd_label->setMinimumWidth(80);
+      cwd_label->setStyleSheet(
+        QString("color: #fcfcfc; font-family: Hack; font-size: %1px;").arg(sc(base_font_message))
+      );
+      cwd_label->setMinimumWidth(sc(80));
       tab_layout->addWidget(cwd_label);
 
       // Status indicator
@@ -587,12 +674,12 @@ void Menu_window::rebuild_dashboard() {
       }
 
       auto* state_indicator = new QLabel(QString(state_label(tab_state)), tab_row);
-      state_indicator->setFixedSize(18, 18);
+      state_indicator->setFixedSize(sc(18), sc(18));
       state_indicator->setAlignment(Qt::AlignCenter);
       state_indicator->setStyleSheet(QString(
-        "background: %1; color: %2; font-family: Hack; font-size: 11px;"
-        "font-weight: bold; border-radius: 3px;"
-      ).arg(state_color_hex(tab_state)).arg(state_text_color_hex(tab_state)));
+        "background: %1; color: %2; font-family: Hack; font-size: %3px;"
+        "font-weight: bold; border-radius: %4px;"
+      ).arg(state_color_hex(tab_state)).arg(state_text_color_hex(tab_state)).arg(sc(11)).arg(sc(3)));
       tab_layout->addWidget(state_indicator);
 
       col_layout->addWidget(tab_row);
@@ -606,8 +693,6 @@ void Menu_window::rebuild_dashboard() {
 
   // Compute height from content without triggering event processing:
   // header row (font ~14px + spacing) + each tab row (font ~15px + spacing) + padding
-  static constexpr int _row_height = 20;
-  static constexpr int _header_row_height = 18;
   int max_tabs = 0;
   for (const auto& ws_info : active_workspaces) {
     auto it = tabs_map.find(ws_info.name);
@@ -615,7 +700,7 @@ void Menu_window::rebuild_dashboard() {
       max_tabs = std::max(max_tabs, static_cast< int>(it->size()));
     }
   }
-  int dashboard_height = _padding + _header_row_height + max_tabs * _row_height + _padding / 2;
+  int dashboard_height = sc(_base_padding) + sc(18) + max_tabs * sc(20) + sc(_base_padding / 2);
   _dashboard_scroll->setFixedHeight(dashboard_height);
   _dashboard_scroll->show();
 }

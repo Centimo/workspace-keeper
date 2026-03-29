@@ -4,6 +4,8 @@
 
 #include <claude_types.h>
 
+#include <cmath>
+
 #include <QAbstractNativeEventFilter>
 #include <QTimer>
 #include <QWidget>
@@ -13,6 +15,7 @@ class QLineEdit;
 class QListWidget;
 class QListWidgetItem;
 class QScrollArea;
+class QVBoxLayout;
 class Desktop_monitor;
 class Workspace_db;
 class Claude_status_tracker;
@@ -56,6 +59,11 @@ class Menu_window
 
  private:
   void finish_session(const QString& response);
+  void reload_scale();
+  void apply_scale();
+  void change_scale(double delta);
+  void show_scale_hint();
+  void restore_message_bar();
   void rebuild_list();
   void update_selection();
   void on_filter_changed(const QString& text);
@@ -65,6 +73,10 @@ class Menu_window
 
   Workspace_menu _menu;
   Workspace_db& _db;
+
+  QWidget* _background = nullptr;
+  QVBoxLayout* _main_layout = nullptr;
+  QVBoxLayout* _input_layout = nullptr;
 
   QScrollArea* _dashboard_scroll;
   QWidget* _dashboard_widget;
@@ -81,11 +93,19 @@ class Menu_window
   int _delete_confirm_remaining_ms = 0;
   QTimer _delete_confirm_tick;
 
-  static constexpr int _padding = 12;
+  // Scale hint display state
+  QTimer _scale_hint_timer;
+
+  double _scale = 1.0;
+
+  int sc(int base) const { return static_cast< int>(std::lround(base * _scale)); }
+
+  static constexpr int _base_width = 600;
+  static constexpr int _base_padding = 12;
   static constexpr int _max_visible_items = 15;
-  static constexpr int _item_height = 34;
-  static constexpr int _header_height = 38;
-  static constexpr int _input_height = 42;
-  static constexpr int _message_bar_height = 26;
+  static constexpr int _base_item_height = 34;
+  static constexpr int _base_header_height = 38;
+  static constexpr int _base_input_height = 42;
+  static constexpr int _base_message_bar_height = 26;
   static constexpr int _border_width = 1;
 };
